@@ -105,4 +105,4 @@ order: 0
 <p>Content here…</p>
 ```
 
-Files are human-readable and portable — you can open them in any text editor.
+Files are human-readable and portable — you can open them in any text editor .
