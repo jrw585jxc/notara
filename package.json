@@ -1,0 +1,107 @@
+{
+  "name": "notara",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Your private offline Notion",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently -k -n VITE,ELECTRON -c cyan,yellow \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "vite": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "make:win": "npm run build && electron-forge make --platform win32 --arch x64",
+    "make:mac": "npm run build && electron-forge make --platform darwin --arch universal"
+  },
+  "dependencies": {
+    "@tiptap/extension-heading": "^3.23.4",
+    "@tiptap/extension-highlight": "^3.23.4",
+    "@tiptap/extension-link": "^3.23.4",
+    "@tiptap/extension-placeholder": "^3.23.4",
+    "@tiptap/extension-task-item": "^3.23.4",
+    "@tiptap/extension-task-list": "^3.23.4",
+    "@tiptap/extension-typography": "^3.23.4",
+    "@tiptap/pm": "^3.23.4",
+    "@tiptap/react": "^3.23.4",
+    "@tiptap/starter-kit": "^3.23.4",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "gray-matter": "^4.0.3",
+    "lucide-react": "^1.16.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "react-router-dom": "^7.15.1",
+    "zustand": "^5.0.13",
+    "@tiptap/extension-table": "^3.23.4",
+    "@tiptap/extension-table-row": "^3.23.4",
+    "@tiptap/extension-table-cell": "^3.23.4",
+    "@tiptap/extension-table-header": "^3.23.4",
+    "electron-squirrel-startup": "^1.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.12.3",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^9.2.1",
+    "electron": "^42.0.1",
+    "eslint": "^10.3.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.6.0",
+    "tailwindcss": "^4.3.0",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.59.2",
+    "vite": "^8.0.12",
+    "wait-on": "^9.0.10",
+    "@electron-forge/cli": "^7.8.0",
+    "@electron-forge/maker-squirrel": "^7.8.0",
+    "@electron-forge/maker-zip": "^7.8.0"
+  },
+  "config": {
+    "forge": {
+      "packagerConfig": {
+        "name": "Notara",
+        "executableName": "Notara",
+        "icon": "build-resources/icon",
+        "asar": true,
+        "ignore": [
+          "^/src",
+          "^/tsconfig",
+          "^/vite\\.config",
+          "^/eslint\\.config",
+          "^/build-resources",
+          "^\\.git",
+          "^/SETUP\\.md",
+          "^/INSTALL\\.md",
+          "^/README\\.md",
+          "^/build-windows\\.bat",
+          "^/build-mac\\.sh",
+          "^/index\\.html"
+        ]
+      },
+      "makers": [
+        {
+          "name": "@electron-forge/maker-squirrel",
+          "config": {
+            "name": "Notara",
+            "setupIcon": "./build-resources/icon.ico",
+            "setupExe": "Notara-Setup.exe",
+            "authors": "Notara",
+            "description": "Private offline note-taking app"
+          }
+        },
+        {
+          "name": "@electron-forge/maker-zip",
+          "platforms": [
+            "win32",
+            "darwin",
+            "linux"
+          ]
+        }
+      ]
+    }
+  }
+}
