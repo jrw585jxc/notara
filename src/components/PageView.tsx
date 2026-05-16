@@ -9,7 +9,8 @@ const EMOJIS = ['📄','📝','📓','📔','📒','📕','📗','📘','📙','
   '🧠','💻','🔧','⚡','🌱','🦋','🎉','🍀','☕','🌙','☀️','🏠','🎭','📊','🔑']
 
 export function PageView() {
-  const { pages, activePageId, updatePage, saveStatus } = useStore()
+  const { pages, activePageId, updatePage, saveStatus, devMode } = useStore()
+
   const page = pages.find(p => p.id === activePageId)
 
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
@@ -37,7 +38,6 @@ export function PageView() {
   const handleTitleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault()
-      // Focus the editor
       document.querySelector<HTMLElement>('.ProseMirror')?.focus()
     }
   }
@@ -73,19 +73,58 @@ export function PageView() {
       <div className="empty-state">
         <div className="empty-state-icon">🗒️</div>
         <div className="empty-state-title">No page selected</div>
+        <div className="empty-state-desc">Select a page from the sidebar, or create a new one.</div>
+      </div>
+    )
+  }
+
+  if (page.kind === 'folder') {
+    return (
+      <div className="empty-state">
+        <div className="empty-state-icon">📁</div>
+        <div className="empty-state-title">{page.title}</div>
         <div className="empty-state-desc">
-          Select a page from the sidebar, or create a new one.
+          This is a folder. Right-click it in the sidebar to add pages inside.
         </div>
       </div>
     )
   }
 
+  if (page.kind === 'section') {
+    return (
+      <div className="empty-state">
+        <div className="empty-state-icon" style={{ fontSize: 32 }}>—</div>
+        <div className="empty-state-title">{page.title}</div>
+        <div className="empty-state-desc">This is a section label for organising the sidebar.</div>
+      </div>
+    )
+  }
+
+  if (page.kind === 'sticky') {
+    return (
+      <div className="empty-state">
+        <div className="empty-state-icon">🗒️</div>
+        <div className="empty-state-title">{page.title}</div>
+        <div className="empty-state-desc">This is a sticky note. Open it from the sidebar to edit it.</div>
+      </div>
+    )
+  }
+
+  const fontClass = `editor-font-${page.fontFamily || 'sans'}`
+
   return (
-    <div className="editor-area">
+    <div className={`editor-area ${fontClass}`}>
       {/* Page header */}
-      <div className="page-header">
-        {/* Emoji selector */}
-        <div style={{ position: 'relative', display: 'inline-block' }}>
+      <div className={`page-header${page.fullWidth ? ' page-header-full' : ''}`}>
+        {/* Dev mode: show .md filename at top */}
+        {devMode && (
+          <div className="dev-mode-file-header">
+            <span className="dev-mode-filename">{page.filename}</span>
+          </div>
+        )}
+
+        {/* Emoji selector — hidden in dev mode */}
+        {!devMode && <div style={{ position: 'relative', display: 'inline-block' }}>
           <div
             className="page-emoji-button"
             onClick={() => setShowEmojiPicker(v => !v)}
@@ -111,7 +150,7 @@ export function PageView() {
               </div>
             </>
           )}
-        </div>
+        </div>}
 
         {/* Title */}
         <textarea
@@ -171,11 +210,12 @@ export function PageView() {
       </div>
 
       {/* Block editor */}
-      <div className="editor-content-wrap">
+      <div className={`editor-content-wrap${page.fullWidth ? ' editor-content-wrap-full' : ''}`}>
         <BlockEditor
           key={page.id}
           content={page.content}
           onChange={handleContentChange}
+          devMode={devMode}
         />
       </div>
     </div>

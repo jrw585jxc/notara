@@ -1,12 +1,17 @@
 import { create } from 'zustand'
-import { type Page, type Theme } from '../types'
-import { createNewPage, markdownToPage, pageToMarkdown, getAllDescendantIds } from '../lib/pageUtils'
+import { type Page, type Theme, type FontFamily, type PageKind } from '../types'
+import { createNewPage, markdownToPage, pageToMarkdown, getAllDescendantIds, slugifyFilename } from '../lib/pageUtils'
+import {
+  deriveKey, generateSalt, saltToBase64, saltFromBase64,
+  encryptText, decryptText, createVerificationToken, verifyPin,
+} from '../lib/crypto'
 
 const isElectron = typeof window !== 'undefined' && typeof (window as any).notara !== 'undefined'
 
 const LS_PAGES = 'notara:pages'
 const LS_VAULT = 'notara:vault'
 const LS_THEME = 'notara:theme'
+const LS_DEV_MODE = 'notara:devMode'
 const lsGetPages = (): Page[] => { try { return JSON.parse(localStorage.getItem(LS_PAGES) || '[]') } catch { return [] } }
 const lsSetPages = (p: Page[]) => { try { localStorage.setItem(LS_PAGES, JSON.stringify(p)) } catch {} }
 
@@ -20,11 +25,21 @@ interface Store {
   isLoading: boolean
   saveStatus: 'idle' | 'saving' | 'saved' | 'error'
 
+  // Dev mode
+  devMode: boolean
+  cursorLine: number
+
+  // PIN encryption
+  pinEnabled: boolean
+  pinLocked: boolean
+  cryptoKey: CryptoKey | null
+  pinError: string | null
+
   initVault: () => Promise<void>
   selectVault: () => Promise<void>
   loadPages: () => Promise<void>
   setActivePage: (id: string | null) => void
-  createPage: (parentId?: string | null) => Page
+  createPage: (parentId?: string | null, kind?: PageKind) => Page
   updatePage: (id: string, updates: Partial<Page>, save?: boolean) => void
   deletePage: (id: string) => Promise<void>
   savePage: (id: string) => Promise<void>
@@ -32,6 +47,29 @@ interface Store {
   setTheme: (theme: Theme) => void
   toggleSidebar: () => void
   setSearchOpen: (open: boolean) => void
+  setPageFont: (id: string, fontFamily: FontFamily) => void
+  toggleFullWidth: (id: string) => void
+
+  // Dev mode
+  toggleDevMode: () => void
+  setCursorLine: (line: number) => void
+
+  // PIN
+  checkPinStatus: () => Promise<void>
+  setupPin: (pin: string) => Promise<void>
+  unlockWithPin: (pin: string) => Promise<boolean>
+  disablePin: (pin: string) => Promise<boolean>
+  lockApp: () => void
+
+  // Sticky notes
+  createStickyNote: () => Promise<void>
+  openStickyNote: (id: string) => Promise<void>
+
+  // Import / Export
+  importPage: () => Promise<void>
+  exportCurrentMd: () => Promise<void>
+  exportCurrentHtml: () => Promise<void>
+  exportCurrentPdf: () => Promise<void>
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -45,13 +83,27 @@ export const useStore = create<Store>((set, get) => ({
   searchOpen: false,
   isLoading: false,
   saveStatus: 'idle',
+  devMode: localStorage.getItem(LS_DEV_MODE) === 'true',
+  cursorLine: 1,
+  pinEnabled: false,
+  pinLocked: false,
+  cryptoKey: null,
+  pinError: null,
 
   initVault: async () => {
     set({ isLoading: true })
     let vault: string | null = null
     if (isElectron) vault = await (window as any).notara.vault.get()
     else vault = localStorage.getItem(LS_VAULT)
-    if (vault) { set({ vault }); await get().loadPages() }
+
+    if (vault) {
+      set({ vault })
+      // Check if PIN is set before loading pages
+      await get().checkPinStatus()
+      if (!get().pinLocked) {
+        await get().loadPages()
+      }
+    }
     set({ isLoading: false })
   },
 
@@ -64,17 +116,37 @@ export const useStore = create<Store>((set, get) => ({
     await get().loadPages()
   },
 
+  checkPinStatus: async () => {
+    if (!isElectron) return
+    const data = await (window as any).notara.prefs.getPinData()
+    if (data.salt && data.verificationToken) {
+      set({ pinEnabled: true, pinLocked: true })
+    } else {
+      set({ pinEnabled: false, pinLocked: false })
+    }
+  },
+
   loadPages: async () => {
-    const { vault } = get()
+    const { vault, cryptoKey } = get()
     if (!vault) return
     set({ isLoading: true })
     let pages: Page[] = []
     if (isElectron) {
-      const files = await (window as any).notara.pages.readAll(vault)
-      pages = (files as any[]).map((f: any) => markdownToPage(f.content)).filter((p): p is Page => p !== null)
+      const files = await (window as any).notara.pages.readAll(vault) as Array<{ filename: string; content: string }>
+      const parsed = await Promise.all(files.map(async (f) => {
+        let raw = f.content
+        // Decrypt if key is set
+        if (cryptoKey) {
+          try { raw = await decryptText(raw, cryptoKey) }
+          catch { return null } // skip files that fail decryption
+        }
+        return markdownToPage(raw, f.filename)
+      }))
+      pages = parsed.filter((p): p is Page => p !== null)
     } else {
       pages = lsGetPages()
     }
+
     if (pages.length === 0) {
       const welcome = createNewPage(null, 0)
       welcome.title = 'Welcome to Notara'
@@ -82,22 +154,32 @@ export const useStore = create<Store>((set, get) => ({
       welcome.content = '<h1>Welcome to Notara</h1><p>This is your private, offline workspace.</p><h2>Getting started</h2><ul><li><p>Click <strong>+</strong> in the sidebar to create pages</p></li><li><p>Type <strong>/</strong> in the editor for block commands</p></li><li><p>Press <strong>Ctrl/Cmd+K</strong> to search all pages</p></li></ul><p>Notes are stored as plain <code>.md</code> files, synced by Proton Drive.</p>'
       pages = [welcome]
       if (!isElectron) lsSetPages(pages)
-      else await (window as any).notara.pages.write(vault, welcome.id, pageToMarkdown(welcome))
+      else await get().savePage(welcome.id)
     }
     set({ pages, isLoading: false, activePageId: pages[0]?.id ?? null })
   },
 
   setActivePage: (id) => set({ activePageId: id }),
 
-  createPage: (parentId = null) => {
-    const { pages, vault } = get()
+  createPage: (parentId = null, kind: PageKind = 'page') => {
+    const { pages, vault, cryptoKey } = get()
     const siblings = pages.filter(p => p.parentId === parentId)
-    const page = createNewPage(parentId, siblings.length)
+    const page = createNewPage(parentId, siblings.length, kind)
     const newPages = [...pages, page]
     set({ pages: newPages, activePageId: page.id })
     if (vault) {
-      if (isElectron) (window as any).notara.pages.write(vault, page.id, pageToMarkdown(page))
-      else lsSetPages(newPages)
+      if (isElectron) {
+        const write = async () => {
+          let content = pageToMarkdown(page)
+          if (cryptoKey) content = await encryptText(content, cryptoKey)
+          // Guard: if the page was renamed while encryption was running (race with savePage),
+          // skip writing the stale untitled filename to avoid leaving a phantom file on disk.
+          const current = get().pages.find(p => p.id === page.id)
+          if (!current || current.filename !== page.filename) return
+          ;(window as any).notara.pages.write(vault, page.filename, content)
+        }
+        write()
+      } else lsSetPages(newPages)
     }
     return page
   },
@@ -115,13 +197,31 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   savePage: async (id) => {
-    const { pages, vault } = get()
+    const { pages, vault, cryptoKey } = get()
     if (!vault) return
     const page = pages.find(p => p.id === id)
     if (!page) return
     try {
-      if (isElectron) await (window as any).notara.pages.write(vault, page.id, pageToMarkdown(page))
-      else lsSetPages(pages)
+      if (isElectron) {
+        // Compute new filename from current title
+        const newFilename = slugifyFilename(page.title, page.id)
+        const oldFilename = page.filename !== newFilename ? page.filename : undefined
+
+        // Update the page's filename in state if changed
+        let updatedPages = pages
+        if (newFilename !== page.filename) {
+          updatedPages = pages.map(p => p.id === id ? { ...p, filename: newFilename } : p)
+          set({ pages: updatedPages })
+        }
+
+        const updatedPage = updatedPages.find(p => p.id === id)!
+        let content = pageToMarkdown({ ...updatedPage, filename: newFilename })
+        if (cryptoKey) content = await encryptText(content, cryptoKey)
+
+        await (window as any).notara.pages.write(vault, newFilename, content, oldFilename)
+      } else {
+        lsSetPages(pages)
+      }
       set({ saveStatus: 'saved' })
       setTimeout(() => set({ saveStatus: 'idle' }), 2000)
     } catch { set({ saveStatus: 'error' }) }
@@ -134,8 +234,12 @@ export const useStore = create<Store>((set, get) => ({
     const newActive = activePageId && idsToDelete.includes(activePageId) ? (newPages[0]?.id ?? null) : activePageId
     set({ pages: newPages, activePageId: newActive })
     if (vault) {
-      if (isElectron) for (const did of idsToDelete) await (window as any).notara.pages.delete(vault, did)
-      else lsSetPages(newPages)
+      if (isElectron) {
+        for (const did of idsToDelete) {
+          const p = pages.find(pg => pg.id === did)
+          if (p) await (window as any).notara.pages.delete(vault, p.filename)
+        }
+      } else lsSetPages(newPages)
     }
   },
 
@@ -150,4 +254,206 @@ export const useStore = create<Store>((set, get) => ({
   setTheme: (theme) => { localStorage.setItem(LS_THEME, theme); set({ theme }) },
   toggleSidebar: () => set(s => ({ sidebarCollapsed: !s.sidebarCollapsed })),
   setSearchOpen: (open) => set({ searchOpen: open }),
+
+  setPageFont: (id, fontFamily) => {
+    get().updatePage(id, { fontFamily })
+  },
+
+  toggleFullWidth: (id) => {
+    const page = get().pages.find(p => p.id === id)
+    if (page) get().updatePage(id, { fullWidth: !page.fullWidth })
+  },
+
+  // ── Dev mode ────────────────────────────────────────────────
+  toggleDevMode: () => {
+    const next = !get().devMode
+    localStorage.setItem(LS_DEV_MODE, String(next))
+    set({ devMode: next })
+  },
+  setCursorLine: (line) => set({ cursorLine: line }),
+
+  // ── PIN encryption ──────────────────────────────────────────
+  setupPin: async (pin) => {
+    const { pages, vault } = get()
+    const salt = generateSalt()
+    const key = await deriveKey(pin, salt)
+    const verificationToken = await createVerificationToken(key)
+
+    // Re-encrypt all pages with new key
+    if (vault && isElectron) {
+      for (const page of pages) {
+        let content = pageToMarkdown(page)
+        content = await encryptText(content, key)
+        await (window as any).notara.pages.write(vault, page.filename, content)
+      }
+      await (window as any).notara.prefs.setPinData(saltToBase64(salt), verificationToken)
+    }
+
+    set({ pinEnabled: true, pinLocked: false, cryptoKey: key, pinError: null })
+  },
+
+  unlockWithPin: async (pin) => {
+    if (!isElectron) return true
+    const data = await (window as any).notara.prefs.getPinData()
+    if (!data.salt || !data.verificationToken) return true
+
+    try {
+      const salt = saltFromBase64(data.salt)
+      const key = await deriveKey(pin, salt)
+      const valid = await verifyPin(data.verificationToken, key)
+      if (valid) {
+        set({ cryptoKey: key, pinLocked: false, pinError: null })
+        await get().loadPages()
+        return true
+      } else {
+        set({ pinError: 'Incorrect PIN. Try again.' })
+        return false
+      }
+    } catch {
+      set({ pinError: 'Incorrect PIN. Try again.' })
+      return false
+    }
+  },
+
+  disablePin: async (pin) => {
+    const { pages, vault } = get()
+    if (!isElectron) return true
+
+    const data = await (window as any).notara.prefs.getPinData()
+    if (!data.salt || !data.verificationToken) return true
+
+    const salt = saltFromBase64(data.salt)
+    const key = await deriveKey(pin, salt)
+    const valid = await verifyPin(data.verificationToken, key)
+    if (!valid) {
+      set({ pinError: 'Incorrect PIN.' })
+      return false
+    }
+
+    // Decrypt all pages and re-save as plaintext
+    if (vault) {
+      for (const page of pages) {
+        let content = pageToMarkdown(page)
+        // Write unencrypted
+        await (window as any).notara.pages.write(vault, page.filename, content)
+      }
+      await (window as any).notara.prefs.clearPinData()
+    }
+
+    set({ pinEnabled: false, pinLocked: false, cryptoKey: null, pinError: null })
+    return true
+  },
+
+  lockApp: () => {
+    set({ pinLocked: true, cryptoKey: null, pages: [] })
+  },
+
+  // ── Import / Export ─────────────────────────────────────────
+  importPage: async () => {
+    const { vault, pages, cryptoKey } = get()
+    if (!vault || !isElectron) return
+
+    const result = await (window as any).notara.pages.importFile(vault)
+    if (!result) return
+
+    const { content, ext, filename: importedFilename } = result
+
+    // Convert content to a new page
+    let title = importedFilename.replace(/\.[^.]+$/, '') // strip extension
+    let html = '<p></p>'
+
+    if (ext === 'html' || ext === 'htm') {
+      // Strip to body content
+      const bodyMatch = content.match(/<body[^>]*>([\s\S]*?)<\/body>/i)
+      html = bodyMatch ? bodyMatch[1].trim() : content
+    } else {
+      // Treat as markdown / text — do basic conversion
+      html = content
+        .split('\n')
+        .map((ln: string) => {
+          if (ln.startsWith('# ')) { title = ln.slice(2).trim(); return `<h1>${title}</h1>` }
+          if (ln.startsWith('## ')) return `<h2>${ln.slice(3).trim()}</h2>`
+          if (ln.startsWith('### ')) return `<h3>${ln.slice(4).trim()}</h3>`
+          if (ln.startsWith('- ') || ln.startsWith('* ')) return `<li>${ln.slice(2).trim()}</li>`
+          if (ln.trim() === '') return ''
+          return `<p>${ln}</p>`
+        })
+        .filter(Boolean)
+        .join('\n')
+    }
+
+    const newPage = createNewPage(null, pages.filter(p => p.parentId === null).length)
+    newPage.title = title
+    newPage.content = html
+
+    const newPages = [...pages, newPage]
+    set({ pages: newPages, activePageId: newPage.id })
+
+    // Save
+    let mdContent = pageToMarkdown(newPage)
+    if (cryptoKey) mdContent = await encryptText(mdContent, cryptoKey)
+    await (window as any).notara.pages.write(vault, newPage.filename, mdContent)
+  },
+
+  exportCurrentMd: async () => {
+    const { pages, activePageId } = get()
+    const page = pages.find(p => p.id === activePageId)
+    if (!page || !isElectron) return
+    const content = pageToMarkdown(page)
+    await (window as any).notara.pages.exportMd(content, page.filename)
+  },
+
+  exportCurrentHtml: async () => {
+    const { pages, activePageId } = get()
+    const page = pages.find(p => p.id === activePageId)
+    if (!page || !isElectron) return
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>${page.title}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 24px; color: #37352f; line-height: 1.65; }
+    h1 { font-size: 2em; } h2 { font-size: 1.5em; } h3 { font-size: 1.2em; }
+    code { background: #f5f5f3; padding: 0.1em 0.35em; border-radius: 3px; font-size: 0.875em; }
+    pre { background: #f5f5f3; padding: 1em; border-radius: 6px; overflow: auto; }
+    blockquote { border-left: 3px solid #ccc; margin: 0; padding-left: 1em; color: #666; }
+    a { color: #2eaadc; }
+  </style>
+</head>
+<body>
+  <h1>${page.title}</h1>
+  ${page.content}
+</body>
+</html>`
+    const suggestedName = page.filename.replace('.md', '.html')
+    await (window as any).notara.pages.exportHtml(html, suggestedName)
+  },
+
+  exportCurrentPdf: async () => {
+    const { pages, activePageId } = get()
+    const page = pages.find(p => p.id === activePageId)
+    if (!page || !isElectron) return
+    const suggestedName = page.filename.replace('.md', '.pdf')
+    await (window as any).notara.pages.exportPdf(suggestedName)
+  },
+
+  // ── Sticky notes ────────────────────────────────────────────
+  createStickyNote: async () => {
+    const { pages, vault } = get()
+    const stickies = pages.filter(p => p.kind === 'sticky')
+    const page = createNewPage(null, stickies.length, 'sticky')
+    const newPages = [...pages, page]
+    set({ pages: newPages })
+    if (vault && isElectron) {
+      const content = pageToMarkdown(page)
+      await (window as any).notara.pages.write(vault, page.filename, content)
+      await (window as any).notara.sticky.open(page.id)
+    }
+  },
+
+  openStickyNote: async (id) => {
+    if (!isElectron) return
+    await (window as any).notara.sticky.open(id)
+  },
 }))

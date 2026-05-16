@@ -2,11 +2,19 @@ import { useEffect } from 'react'
 import { useStore } from './store/useStore'
 import { Layout } from './components/Layout'
 import { VaultSetup } from './components/VaultSetup'
+import { PinScreen } from './components/PinScreen'
 
 export default function App() {
-  const { vault, theme, isLoading, initVault } = useStore()
+  const { vault, theme, isLoading, initVault, pinEnabled, pinLocked, createStickyNote } = useStore()
 
   useEffect(() => { initVault() }, []) // eslint-disable-line
+
+  // Listen for menu-new-sticky from main process / tray
+  useEffect(() => {
+    if (typeof window === 'undefined' || !(window as any).notara) return
+    const off = (window as any).notara.on('menu-new-sticky', () => { createStickyNote() })
+    return () => off?.()
+  }, [createStickyNote])
 
   useEffect(() => {
     const root = document.documentElement
@@ -42,5 +50,11 @@ export default function App() {
   }
 
   if (!vault) return <VaultSetup />
+
+  // Show PIN unlock screen
+  if (pinEnabled && pinLocked) {
+    return <PinScreen mode="unlock" />
+  }
+
   return <Layout />
 }

@@ -1,7 +1,20 @@
-import { type Page } from '../types'
+import { type Page, type PageKind, type StickyColor } from '../types'
 
 export function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
+}
+
+export function slugifyFilename(title: string, id: string): string {
+  const slug = title
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 50) || 'untitled'
+  const shortId = id.slice(0, 6)
+  return `${slug}-${shortId}.md`
 }
 
 export function pageToMarkdown(page: Page): string {
@@ -15,13 +28,18 @@ export function pageToMarkdown(page: Page): string {
     'created: "' + page.created + '"',
     'modified: "' + page.modified + '"',
     'order: ' + String(page.order),
+    'filename: "' + page.filename + '"',
+    'fontFamily: "' + (page.fontFamily || 'sans') + '"',
+    'fullWidth: ' + String(page.fullWidth ?? false),
+    'kind: "' + (page.kind || 'page') + '"',
+    ...(page.color ? ['color: "' + page.color + '"'] : []),
     '---',
     '',
   ]
   return lines.join('\n') + page.content
 }
 
-export function markdownToPage(raw: string): Page | null {
+export function markdownToPage(raw: string, diskFilename?: string): Page | null {
   try {
     const fmMatch = raw.match(/^---\n([\s\S]*?)\n---\n?/)
     if (!fmMatch) return null
@@ -48,10 +66,27 @@ export function markdownToPage(raw: string): Page | null {
     const id = getStr('id')
     if (!id) return null
     const parentRaw = getStr('parentId', '')
+    const fontFamilyRaw = getStr('fontFamily', 'sans')
+    const fontFamily = ['sans', 'serif', 'mono'].includes(fontFamilyRaw)
+      ? (fontFamilyRaw as 'sans' | 'serif' | 'mono')
+      : 'sans'
+
+    // Use filename from frontmatter if present, else from disk, else compute
+    const title = getStr('title', 'Untitled')
+    const fmFilename = getStr('filename', '')
+    const filename = fmFilename || diskFilename || slugifyFilename(title, id)
+
+    const fullWidthRaw = getStr('fullWidth', 'false')
+    const kindRaw = getStr('kind', 'page')
+    const kind: PageKind = ['page', 'folder', 'section', 'sticky'].includes(kindRaw)
+      ? (kindRaw as PageKind) : 'page'
+    const colorRaw = getStr('color', '')
+    const color: StickyColor | undefined = ['yellow', 'blue', 'green', 'pink', 'purple', 'black', 'white'].includes(colorRaw)
+      ? (colorRaw as StickyColor) : undefined
 
     return {
       id,
-      title: getStr('title', 'Untitled'),
+      title,
       emoji: getStr('emoji', '\u{1F4C4}'),
       parentId: parentRaw === 'null' || parentRaw === '' ? null : parentRaw,
       tags: getTags(),
@@ -59,6 +94,11 @@ export function markdownToPage(raw: string): Page | null {
       modified: getStr('modified', new Date().toISOString()),
       order: getNum('order'),
       content,
+      filename,
+      fontFamily,
+      fullWidth: fullWidthRaw === 'true',
+      kind,
+      color,
     }
   } catch { return null }
 }
@@ -97,17 +137,24 @@ export function searchPages(pages: Page[], query: string, limit = 20) {
     .sort((a, b) => b.score - a.score).slice(0, limit)
 }
 
-export function createNewPage(parentId: string | null = null, existingCount = 0): Page {
+export function createNewPage(parentId: string | null = null, existingCount = 0, kind: PageKind = 'page'): Page {
   const now = new Date().toISOString()
+  const id = generateId()
+  const title = kind === 'folder' ? 'New Folder' : kind === 'section' ? 'New Section' : kind === 'sticky' ? 'New Sticky Note' : 'Untitled'
   return {
-    id: generateId(),
-    title: 'Untitled',
-    emoji: '\u{1F4C4}',
+    id,
+    title,
+    emoji: kind === 'folder' ? '📁' : '\u{1F4C4}',
     parentId,
     tags: [],
     created: now,
     modified: now,
     order: existingCount,
     content: '<p></p>',
+    filename: slugifyFilename(title, id),
+    fontFamily: 'sans',
+    fullWidth: false,
+    kind,
+    color: kind === 'sticky' ? 'yellow' : undefined,
   }
 }
