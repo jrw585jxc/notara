@@ -31,6 +31,7 @@ const ALL_ITEMS: SlashItem[] = [
   { id: 'tabs',     icon: '📑', title: 'Tabs',         desc: 'Tabbed content sections',      group: 'Advanced', keywords: ['tabs', 'tab', 'tabbed', 'sections'] },
   { id: 'table',    icon: '⊞',  title: 'Table',        desc: 'Insert a 3×3 table',          group: 'Advanced', keywords: ['table', 'grid', 'database', 'spreadsheet', 'db'] },
   { id: 'code',     icon: '<>', title: 'Code block',   desc: 'Write code with syntax',       group: 'Advanced', keywords: ['code', 'codeblock', 'pre'] },
+  { id: 'embed',    icon: '🌐', title: 'Embed',        desc: 'Paste a URL to embed inline',  group: 'Advanced', keywords: ['embed', 'iframe', 'url', 'website', 'link', 'web'] },
 ]
 
 interface Props {

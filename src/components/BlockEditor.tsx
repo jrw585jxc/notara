@@ -16,7 +16,7 @@ import { TextStyle } from '@tiptap/extension-text-style'
 import Color from '@tiptap/extension-color'
 import {
   Bold, Italic, Strikethrough, Code, Highlighter, AlignLeft,
-  Grid3X3, Plus, Trash2, ChevronRight, ChevronDown,
+  Grid3X3, Plus, Trash2, ChevronRight,
   Underline as UnderlineIcon, Type, X,
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -25,6 +25,7 @@ import { useStore } from '../store/useStore'
 import { ToggleBlock } from '../extensions/ToggleBlock'
 import { MediaBlock } from '../extensions/MediaBlock'
 import { TabGroup, TabPanel } from '../extensions/TabsBlock'
+import { IframeBlock } from '../extensions/IframeBlock'
 
 // ── Color palettes ────────────────────────────────────────────
 const TEXT_COLORS = [
@@ -295,10 +296,17 @@ function MediaDialog({
   state, onConfirm, onClose,
 }: { state: MediaDialogState; onConfirm: (src: string, name: string) => void; onClose: () => void }) {
   const { vault } = useStore()
+  const [tab, setTab] = useState<'upload' | 'url'>('upload')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [urlValue, setUrlValue] = useState('')
+  const urlInputRef = useRef<HTMLInputElement>(null)
   const { mediaType } = state
   const typeLabels: Record<MediaType, string> = { image: 'Image', video: 'Video', audio: 'Audio', file: 'File' }
+
+  useEffect(() => {
+    if (tab === 'url') setTimeout(() => urlInputRef.current?.focus(), 50)
+  }, [tab])
 
   const handleUpload = async () => {
     if (!vault || typeof window.notara === 'undefined') return
@@ -309,22 +317,64 @@ function MediaDialog({
     onConfirm(result.src, result.name)
   }
 
+  const handleUrlConfirm = () => {
+    const u = urlValue.trim()
+    if (!u) { setError('Please enter a URL.'); return }
+    // Derive a filename from the URL path
+    const name = u.split('/').filter(Boolean).pop() || mediaType
+    onConfirm(u, name)
+  }
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card media-dialog" onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <span className="modal-title">Insert {typeLabels[mediaType]}</span>
-          <button className="btn btn-icon btn-ghost" onClick={onClose}><X size={16} /></button>
+    <div className="media-dialog-overlay" onClick={onClose}>
+      <div className="media-dialog" onClick={e => e.stopPropagation()}>
+        <div className="media-dialog-header">
+          <span className="media-dialog-title">Insert {typeLabels[mediaType]}</span>
+          <button className="btn btn-icon btn-ghost" onClick={onClose}><X size={14} /></button>
         </div>
-        <div className="media-dialog-body">
-          <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
-            Choose a {typeLabels[mediaType].toLowerCase()} file from your computer.
-          </p>
-          <button className="btn btn-primary" onClick={handleUpload} disabled={loading}>
-            {loading ? 'Importing…' : 'Choose file…'}
-          </button>
+
+        {/* Tab strip */}
+        <div className="media-dialog-tabs">
+          <button
+            className={`media-dialog-tab${tab === 'upload' ? ' active' : ''}`}
+            onClick={() => { setTab('upload'); setError('') }}
+          >Upload</button>
+          <button
+            className={`media-dialog-tab${tab === 'url' ? ' active' : ''}`}
+            onClick={() => { setTab('url'); setError('') }}
+          >URL</button>
         </div>
-        {error && <div className="media-dialog-error">{error}</div>}
+
+        <div style={{ padding: '12px 16px 16px' }}>
+          {tab === 'upload' ? (
+            <>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 12px' }}>
+                Choose a {typeLabels[mediaType].toLowerCase()} file from your computer.
+              </p>
+              <button className="btn btn-primary" onClick={handleUpload} disabled={loading}>
+                {loading ? 'Importing…' : 'Choose file…'}
+              </button>
+            </>
+          ) : (
+            <>
+              <input
+                ref={urlInputRef}
+                className="media-url-input"
+                placeholder={mediaType === 'image' ? 'https://example.com/image.png' : 'https://'}
+                value={urlValue}
+                onChange={e => setUrlValue(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleUrlConfirm() }}
+              />
+              <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+                <button className="btn btn-primary" onClick={handleUrlConfirm} disabled={!urlValue.trim()}>
+                  Insert
+                </button>
+              </div>
+            </>
+          )}
+          {error && <div className="media-dialog-error" style={{ marginTop: 8 }}>{error}</div>}
+        </div>
       </div>
     </div>
   )
@@ -339,13 +389,16 @@ interface Props {
   devMode?: boolean
 }
 
+const isElectron = typeof window !== 'undefined' && typeof (window as any).notara !== 'undefined'
+
 export function BlockEditor({ content, onChange, devMode }: Props) {
-  const { setCursorLine } = useStore()
+  const { setCursorLine, vault } = useStore()
   const [slashMenu, setSlashMenu] = useState<SlashState | null>(null)
   const [slashStart, setSlashStart] = useState<number | null>(null)
   const [tableToolbar, setTableToolbar] = useState(false)
   const [contextMenu, setContextMenu] = useState<CtxMenu | null>(null)
   const [mediaDialog, setMediaDialog] = useState<MediaDialogState | null>(null)
+  const [embedDialog, setEmbedDialog] = useState(false)
   const editorRef = useRef<HTMLDivElement>(null)
   // Track whether the last content change came from the editor itself.
   // When true, the useEffect below must NOT call setContent() — that would
@@ -381,6 +434,7 @@ export function BlockEditor({ content, onChange, devMode }: Props) {
       MediaBlock,
       TabGroup,
       TabPanel,
+      IframeBlock,
     ],
     content,
     onUpdate: ({ editor: ed }) => {
@@ -423,7 +477,37 @@ export function BlockEditor({ content, onChange, devMode }: Props) {
       })
       setCursorLine(Math.max(1, line))
     },
-    editorProps: { attributes: { class: 'ProseMirror', spellcheck: 'true' } },
+    editorProps: {
+      attributes: { class: 'ProseMirror', spellcheck: 'true' },
+      handlePaste: (_view, event) => {
+        if (!isElectron || !vault) return false
+        const files = event.clipboardData?.files
+        if (!files || files.length === 0) return false
+
+        // Only handle files (images, videos, audio, other)
+        const file = files[0]
+        const mime = file.type
+
+        let mediaType: 'image' | 'video' | 'audio' | 'file' = 'file'
+        if (mime.startsWith('image/')) mediaType = 'image'
+        else if (mime.startsWith('video/')) mediaType = 'video'
+        else if (mime.startsWith('audio/')) mediaType = 'audio'
+
+        file.arrayBuffer().then(async (buf) => {
+          const result = await (window as any).notara.media.saveBuffer(vault, file.name, buf)
+          if (!result) return
+          // Re-get editor ref since this is async
+          const ed = editor
+          if (!ed || ed.isDestroyed) return
+          ed.chain().focus().insertContent({
+            type: 'mediaBlock',
+            attrs: { mediaType, src: result.src, name: result.name },
+          }).run()
+        })
+
+        return true  // prevent default paste
+      },
+    },
   })
 
   useEffect(() => {
@@ -448,6 +532,7 @@ export function BlockEditor({ content, onChange, devMode }: Props) {
     if (['image', 'video', 'audio', 'file'].includes(type)) {
       setMediaDialog({ mediaType: type as MediaType }); return
     }
+    if (type === 'embed') { setEmbedDialog(true); return }
     switch (type) {
       case 'h1':      editor.chain().focus().toggleHeading({ level: 1 }).run(); break
       case 'h2':      editor.chain().focus().toggleHeading({ level: 2 }).run(); break
@@ -481,6 +566,14 @@ export function BlockEditor({ content, onChange, devMode }: Props) {
     }).run()
     setMediaDialog(null)
   }, [editor, mediaDialog])
+
+  const insertEmbed = useCallback((url: string) => {
+    if (!editor || !url.trim()) return
+    editor.chain().focus().insertContent({
+      type: 'iframeBlock', attrs: { src: url.trim(), height: 400 },
+    }).run()
+    setEmbedDialog(false)
+  }, [editor])
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -545,37 +638,88 @@ export function BlockEditor({ content, onChange, devMode }: Props) {
             <Plus size={10} /><ChevronRight size={12} /> Col right
           </button>
           <button className="btn btn-ghost table-toolbar-btn" onMouseDown={e => { e.preventDefault(); editor.chain().focus().addRowBefore().run() }}>
-            <ChevronDown size={12} style={{ transform: 'scaleY(-1)' }} /><Plus size={10} /> Row above
+            <ChevronRight size={12} style={{ transform: 'rotate(-90deg)' }} /><Plus size={10} /> Row above
           </button>
           <button className="btn btn-ghost table-toolbar-btn" onMouseDown={e => { e.preventDefault(); editor.chain().focus().addRowAfter().run() }}>
-            <Plus size={10} /><ChevronDown size={12} /> Row below
+            <Plus size={10} /><ChevronRight size={12} style={{ transform: 'rotate(90deg)' }} /> Row below
           </button>
           <div className="table-toolbar-sep" />
-          <button className="btn btn-ghost table-toolbar-btn table-toolbar-btn-danger" onMouseDown={e => { e.preventDefault(); editor.chain().focus().deleteColumn().run() }}>
-            <Trash2 size={12} /> Del col
-          </button>
-          <button className="btn btn-ghost table-toolbar-btn table-toolbar-btn-danger" onMouseDown={e => { e.preventDefault(); editor.chain().focus().deleteRow().run() }}>
-            <Trash2 size={12} /> Del row
-          </button>
-          <div className="table-toolbar-sep" />
-          <button className="btn btn-ghost table-toolbar-btn table-toolbar-btn-danger" onMouseDown={e => { e.preventDefault(); editor.chain().focus().deleteTable().run() }}>
+          <button className="btn btn-ghost table-toolbar-btn danger" onMouseDown={e => { e.preventDefault(); editor.chain().focus().deleteTable().run() }}>
             <Trash2 size={12} /> Delete table
           </button>
         </div>
       )}
 
       {slashMenu && (
-        <SlashMenu x={slashMenu.x} y={slashMenu.y} query={slashMenu.query}
-          onSelect={onSlashCommand} onClose={closeSlash} />
+        <SlashMenu
+          x={slashMenu.x} y={slashMenu.y} query={slashMenu.query}
+          onSelect={onSlashCommand} onClose={closeSlash}
+        />
       )}
 
       {contextMenu && (
-        <ContextMenu pos={contextMenu} editor={editor} onClose={() => setContextMenu(null)} />
+        <ContextMenu
+          pos={contextMenu} editor={editor}
+          onClose={() => setContextMenu(null)}
+        />
       )}
 
       {mediaDialog && (
-        <MediaDialog state={mediaDialog} onConfirm={insertMedia} onClose={() => setMediaDialog(null)} />
+        <MediaDialog
+          state={mediaDialog}
+          onConfirm={insertMedia}
+          onClose={() => setMediaDialog(null)}
+        />
       )}
+
+      {embedDialog && (
+        <EmbedDialog
+          onConfirm={insertEmbed}
+          onClose={() => setEmbedDialog(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Embed URL dialog ─────────────────────────────────────────
+function EmbedDialog({ onConfirm, onClose }: { onConfirm: (url: string) => void; onClose: () => void }) {
+  const [url, setUrl] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    inputRef.current?.focus()
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  return (
+    <div className="media-dialog-overlay" onClick={onClose}>
+      <div className="media-dialog embed-dialog" onClick={e => e.stopPropagation()}>
+        <div className="media-dialog-header">
+          <span className="media-dialog-title">Embed a URL</span>
+          <button className="btn btn-icon btn-ghost" onClick={onClose}><X size={14} /></button>
+        </div>
+        <div style={{ padding: '12px 16px 16px' }}>
+          <input
+            ref={inputRef}
+            className="media-url-input"
+            placeholder="https://example.com"
+            value={url}
+            onChange={e => setUrl(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') onConfirm(url) }}
+          />
+          <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary" onClick={() => onConfirm(url)} disabled={!url.trim()}>
+              Embed
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

@@ -1632,3 +1632,238 @@ html, body, #root {
   color: var(--danger);
 }
 
+
+/* Make sidebar header a drag region on frameless windows */
+.sidebar-header {
+  -webkit-app-region: drag;
+}
+.sidebar-header .sidebar-actions,
+.sidebar-header .new-item-dropdown {
+  -webkit-app-region: no-drag;
+}
+
+/* ── Iframe embed block ──────────────────────────────────────── */
+.iframe-block {
+  margin: 8px 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg-sidebar);
+}
+.iframe-block.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.iframe-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border-default);
+  min-height: 28px;
+}
+.iframe-drag-handle {
+  color: var(--text-tertiary);
+  cursor: grab;
+  flex-shrink: 0;
+}
+.iframe-url-label {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.iframe-delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  transition: background 0.1s, color 0.1s;
+}
+.iframe-delete-btn:hover { background: var(--bg-hover); color: var(--danger); }
+.iframe-wrap {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+}
+.iframe-el {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
+.iframe-resize-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  cursor: ns-resize;
+}
+.iframe-resize-handle {
+  height: 8px;
+  background: transparent;
+  cursor: ns-resize;
+  border-top: 1px solid var(--border-default);
+  transition: background 0.1s;
+}
+.iframe-resize-handle:hover { background: var(--bg-hover); }
+
+/* Embed dialog sizing */
+.embed-dialog { max-width: 420px; }
+.media-url-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+}
+.media-url-input:focus { border-color: var(--accent); }
+
+/* ── Media dialog (upload + URL tabs) ───────────────────────── */
+.media-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-overlay);
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.12s ease;
+}
+.media-dialog {
+  background: var(--bg-app);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  min-width: 340px;
+  max-width: 440px;
+  width: 90%;
+  animation: slideDown 0.18s ease;
+  overflow: hidden;
+}
+.media-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--border-default);
+}
+.media-dialog-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.media-dialog-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-default);
+  padding: 0 12px;
+}
+.media-dialog-tab {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+  margin-bottom: -1px;
+}
+.media-dialog-tab:hover { color: var(--text-primary); }
+.media-dialog-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.media-dialog-error {
+  font-size: 12px;
+  color: var(--danger, #e53e3e);
+}
+
+/* ── Password input (master password) ───────────────────────── */
+.pw-input-wrap {
+  position: relative;
+  width: 100%;
+}
+.pw-input {
+  width: 100%;
+  padding: 10px 36px 10px 12px;
+  border: 1.5px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+.pw-input:focus { border-color: var(--accent); }
+.pw-show-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+}
+.pw-show-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
+
+/* ── PIN screen spinner ──────────────────────────────────────── */
+.pin-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border-default);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 16px auto 0;
+}
+
+/* ── Window controls (frameless, Windows/Linux) ──────────────── */
+.win-controls {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  margin-left: 2px;
+  flex-shrink: 0;
+}
+.win-controls-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--border-default);
+  margin-right: 2px;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+.win-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.1s, color 0.1s;
+}
+.win-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.win-btn-close:hover {
+  background: #c42b1c;
+  color: #fff;
+}

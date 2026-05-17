@@ -5,7 +5,7 @@ import { VaultSetup } from './components/VaultSetup'
 import { PinScreen } from './components/PinScreen'
 
 export default function App() {
-  const { vault, theme, isLoading, initVault, pinEnabled, pinLocked, createStickyNote } = useStore()
+  const { vault, theme, isLoading, initVault, pinEnabled, pinLocked, createStickyNote, syncPageFromSticky } = useStore()
 
   useEffect(() => { initVault() }, []) // eslint-disable-line
 
@@ -15,6 +15,15 @@ export default function App() {
     const off = (window as any).notara.on('menu-new-sticky', () => { createStickyNote() })
     return () => off?.()
   }, [createStickyNote])
+
+  // Sync sticky note changes (title / color / content) back from sticky windows
+  useEffect(() => {
+    if (typeof window === 'undefined' || !(window as any).notara) return
+    const off = (window as any).notara.on('sticky:pageUpdated', (_event: any, page: any) => {
+      syncPageFromSticky(page)
+    })
+    return () => off?.()
+  }, [syncPageFromSticky])
 
   useEffect(() => {
     const root = document.documentElement

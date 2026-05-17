@@ -2,8 +2,9 @@ import { create } from 'zustand'
 import { type Page, type Theme, type FontFamily, type PageKind } from '../types'
 import { createNewPage, markdownToPage, pageToMarkdown, getAllDescendantIds, slugifyFilename } from '../lib/pageUtils'
 import {
-  deriveKey, generateSalt, saltToBase64, saltFromBase64,
-  encryptText, decryptText, createVerificationToken, verifyPin,
+  deriveMasterKey, derivePinKey, generateSalt, saltToBase64, saltFromBase64,
+  encryptText, decryptText, createVerificationToken, verifyKey,
+  wrapMasterKey, unwrapMasterKey,
 } from '../lib/crypto'
 
 const isElectron = typeof window !== 'undefined' && typeof (window as any).notara !== 'undefined'
@@ -29,9 +30,10 @@ interface Store {
   devMode: boolean
   cursorLine: number
 
-  // PIN encryption
-  pinEnabled: boolean
-  pinLocked: boolean
+  // Encryption (master password + optional per-device PIN)
+  pinEnabled: boolean          // true = vault has _notara-enc.json
+  pinLocked: boolean           // true = waiting for unlock
+  hasDevicePin: boolean        // true = this device has a wrapped master key (PIN shortcut)
   cryptoKey: CryptoKey | null
   pinError: string | null
 
@@ -54,16 +56,22 @@ interface Store {
   toggleDevMode: () => void
   setCursorLine: (line: number) => void
 
-  // PIN
+  // Encryption
   checkPinStatus: () => Promise<void>
-  setupPin: (pin: string) => Promise<void>
+  setupEncryption: (masterPassword: string, pin?: string) => Promise<void>
+  unlockWithMasterPassword: (password: string) => Promise<boolean>
   unlockWithPin: (pin: string) => Promise<boolean>
-  disablePin: (pin: string) => Promise<boolean>
+  setupPinForDevice: (pin: string) => Promise<void>
+  disableEncryption: (masterPassword: string) => Promise<boolean>
   lockApp: () => void
+  // Legacy compat
+  setupPin: (pin: string) => Promise<void>
+  disablePin: (pin: string) => Promise<boolean>
 
   // Sticky notes
   createStickyNote: () => Promise<void>
   openStickyNote: (id: string) => Promise<void>
+  syncPageFromSticky: (updatedPage: Page) => void
 
   // Import / Export
   importPage: () => Promise<void>
@@ -87,6 +95,7 @@ export const useStore = create<Store>((set, get) => ({
   cursorLine: 1,
   pinEnabled: false,
   pinLocked: false,
+  hasDevicePin: false,
   cryptoKey: null,
   pinError: null,
 
@@ -118,12 +127,22 @@ export const useStore = create<Store>((set, get) => ({
 
   checkPinStatus: async () => {
     if (!isElectron) return
-    const data = await (window as any).notara.prefs.getPinData()
-    if (data.salt && data.verificationToken) {
-      set({ pinEnabled: true, pinLocked: true })
-    } else {
-      set({ pinEnabled: false, pinLocked: false })
+    const { vault } = get()
+
+    // New scheme: vault stores _notara-enc.json
+    if (vault) {
+      const encConfig = await (window as any).notara.vault.readEncConfig(vault)
+      if (encConfig?.salt && encConfig?.verificationToken) {
+        // Check if this device has a PIN-wrapped master key
+        const prefs = await (window as any).notara.prefs.getPinData()
+        const hasPin = !!(prefs.wrappedMasterKey && prefs.salt)
+        set({ pinEnabled: true, pinLocked: true, hasDevicePin: hasPin })
+        return
+      }
     }
+
+    // Legacy fallback: prefs-based salt (old scheme — treat as not encrypted to avoid lockout)
+    set({ pinEnabled: false, pinLocked: false, hasDevicePin: false })
   },
 
   loadPages: async () => {
@@ -273,75 +292,173 @@ export const useStore = create<Store>((set, get) => ({
   setCursorLine: (line) => set({ cursorLine: line }),
 
   // ── PIN encryption ──────────────────────────────────────────
-  setupPin: async (pin) => {
+  // ── Encryption: first-time setup ─────────────────────────────
+  setupEncryption: async (masterPassword, pin) => {
     const { pages, vault } = get()
-    const salt = generateSalt()
-    const key = await deriveKey(pin, salt)
-    const verificationToken = await createVerificationToken(key)
+    if (!vault || !isElectron) return
 
-    // Re-encrypt all pages with new key
-    if (vault && isElectron) {
-      for (const page of pages) {
-        let content = pageToMarkdown(page)
-        content = await encryptText(content, key)
-        await (window as any).notara.pages.write(vault, page.filename, content)
-      }
-      await (window as any).notara.prefs.setPinData(saltToBase64(salt), verificationToken)
+    const vaultSalt = generateSalt()
+    const masterKey = await deriveMasterKey(masterPassword, vaultSalt)
+    const verificationToken = await createVerificationToken(masterKey)
+
+    // Write enc config to vault (shared across all devices)
+    await (window as any).notara.vault.writeEncConfig(vault, {
+      salt: saltToBase64(vaultSalt),
+      verificationToken,
+    })
+
+    // Re-encrypt all pages with master key
+    for (const page of pages) {
+      let content = pageToMarkdown(page)
+      content = await encryptText(content, masterKey)
+      await (window as any).notara.pages.write(vault, page.filename, content)
     }
 
-    set({ pinEnabled: true, pinLocked: false, cryptoKey: key, pinError: null })
+    // Optionally set up PIN for this device
+    let hasPin = false
+    if (pin) {
+      const pinSalt = generateSalt()
+      const pinKey = await derivePinKey(pin, pinSalt)
+      const wrappedMasterKey = await wrapMasterKey(masterKey, pinKey)
+      await (window as any).notara.prefs.setPinData({
+        salt: saltToBase64(pinSalt),
+        verificationToken,
+        wrappedMasterKey,
+      })
+      hasPin = true
+    }
+
+    set({ pinEnabled: true, pinLocked: false, hasDevicePin: hasPin, cryptoKey: masterKey, pinError: null })
   },
 
-  unlockWithPin: async (pin) => {
+  // ── Unlock with master password (any device) ─────────────────
+  unlockWithMasterPassword: async (password) => {
     if (!isElectron) return true
-    const data = await (window as any).notara.prefs.getPinData()
-    if (!data.salt || !data.verificationToken) return true
+    const { vault } = get()
+    if (!vault) return false
 
     try {
-      const salt = saltFromBase64(data.salt)
-      const key = await deriveKey(pin, salt)
-      const valid = await verifyPin(data.verificationToken, key)
+      const encConfig = await (window as any).notara.vault.readEncConfig(vault)
+      if (!encConfig?.salt || !encConfig?.verificationToken) return false
+
+      const salt = saltFromBase64(encConfig.salt)
+      const key = await deriveMasterKey(password, salt)
+      const valid = await verifyKey(encConfig.verificationToken, key)
+
       if (valid) {
         set({ cryptoKey: key, pinLocked: false, pinError: null })
         await get().loadPages()
         return true
       } else {
-        set({ pinError: 'Incorrect PIN. Try again.' })
+        set({ pinError: 'Incorrect password. Try again.' })
         return false
       }
+    } catch {
+      set({ pinError: 'Incorrect password. Try again.' })
+      return false
+    }
+  },
+
+  // ── Unlock with PIN (this device, has wrappedMasterKey) ───────
+  unlockWithPin: async (pin) => {
+    if (!isElectron) return true
+    const { vault } = get()
+
+    try {
+      const prefs = await (window as any).notara.prefs.getPinData()
+      if (!prefs.salt || !prefs.wrappedMasterKey) {
+        set({ pinError: 'No PIN set for this device.' })
+        return false
+      }
+
+      const pinSalt = saltFromBase64(prefs.salt)
+      const pinKey = await derivePinKey(pin, pinSalt)
+      const masterKey = await unwrapMasterKey(prefs.wrappedMasterKey, pinKey)
+
+      // Verify the unwrapped key against the vault config
+      const encConfig = vault ? await (window as any).notara.vault.readEncConfig(vault) : null
+      if (encConfig?.verificationToken) {
+        const valid = await verifyKey(encConfig.verificationToken, masterKey)
+        if (!valid) {
+          set({ pinError: 'Incorrect PIN. Try again.' })
+          return false
+        }
+      }
+
+      set({ cryptoKey: masterKey, pinLocked: false, pinError: null })
+      await get().loadPages()
+      return true
     } catch {
       set({ pinError: 'Incorrect PIN. Try again.' })
       return false
     }
   },
 
-  disablePin: async (pin) => {
+  // ── Set up PIN for this device (must be already unlocked) ────
+  setupPinForDevice: async (pin) => {
+    const { cryptoKey } = get()
+    if (!cryptoKey || !isElectron) return
+
+    const { vault } = get()
+    const encConfig = vault ? await (window as any).notara.vault.readEncConfig(vault) : null
+
+    const pinSalt = generateSalt()
+    const pinKey = await derivePinKey(pin, pinSalt)
+    const wrappedMasterKey = await wrapMasterKey(cryptoKey, pinKey)
+
+    await (window as any).notara.prefs.setPinData({
+      salt: saltToBase64(pinSalt),
+      verificationToken: encConfig?.verificationToken ?? '',
+      wrappedMasterKey,
+    })
+
+    set({ hasDevicePin: true, pinError: null })
+  },
+
+  // ── Disable encryption entirely ───────────────────────────────
+  disableEncryption: async (masterPassword) => {
     const { pages, vault } = get()
-    if (!isElectron) return true
+    if (!isElectron || !vault) return false
 
-    const data = await (window as any).notara.prefs.getPinData()
-    if (!data.salt || !data.verificationToken) return true
+    try {
+      const encConfig = await (window as any).notara.vault.readEncConfig(vault)
+      if (!encConfig?.salt || !encConfig?.verificationToken) return true
 
-    const salt = saltFromBase64(data.salt)
-    const key = await deriveKey(pin, salt)
-    const valid = await verifyPin(data.verificationToken, key)
-    if (!valid) {
-      set({ pinError: 'Incorrect PIN.' })
-      return false
-    }
+      const salt = saltFromBase64(encConfig.salt)
+      const key = await deriveMasterKey(masterPassword, salt)
+      const valid = await verifyKey(encConfig.verificationToken, key)
+      if (!valid) {
+        set({ pinError: 'Incorrect password.' })
+        return false
+      }
 
-    // Decrypt all pages and re-save as plaintext
-    if (vault) {
+      // Re-save all pages as plaintext
       for (const page of pages) {
-        let content = pageToMarkdown(page)
-        // Write unencrypted
+        const content = pageToMarkdown(page)
         await (window as any).notara.pages.write(vault, page.filename, content)
       }
-      await (window as any).notara.prefs.clearPinData()
-    }
 
-    set({ pinEnabled: false, pinLocked: false, cryptoKey: null, pinError: null })
-    return true
+      // Remove vault enc config by writing empty  (or we leave the file but clear it)
+      // Write an empty marker so the file doesn't show as encrypted
+      await (window as any).notara.vault.writeEncConfig(vault, { salt: '', verificationToken: '' })
+      await (window as any).notara.prefs.clearPinData()
+
+      set({ pinEnabled: false, pinLocked: false, hasDevicePin: false, cryptoKey: null, pinError: null })
+      return true
+    } catch {
+      set({ pinError: 'Failed to disable encryption.' })
+      return false
+    }
+  },
+
+  // ── Legacy aliases (kept for compatibility with old UI) ───────
+  setupPin: async (pin) => {
+    // Re-route to new flow: treat PIN as master password for simplicity in legacy callers
+    await get().setupEncryption(pin)
+  },
+
+  disablePin: async (pin) => {
+    return get().disableEncryption(pin)
   },
 
   lockApp: () => {
@@ -455,5 +572,15 @@ export const useStore = create<Store>((set, get) => ({
   openStickyNote: async (id) => {
     if (!isElectron) return
     await (window as any).notara.sticky.open(id)
+  },
+
+  // Called when a sticky note window updates its page (title / color / content)
+  syncPageFromSticky: (updatedPage) => {
+    const { pages } = get()
+    const idx = pages.findIndex(p => p.id === updatedPage.id)
+    if (idx === -1) return
+    const newPages = [...pages]
+    newPages[idx] = updatedPage
+    set({ pages: newPages })
   },
 }))

@@ -88,6 +88,8 @@ export function StickyNoteView({ noteId }: StickyNoteViewProps) {
     pageRef.current = updated
     const md = pageToMarkdown(updated)
     await (window as any).notara.pages.write(v, updated.filename, md)
+    // Notify main window so sidebar stays in sync
+    await (window as any).notara.sticky.syncPage(updated)
   }, [])
 
   const debouncedSave = useCallback((updates: Partial<Page>) => {
@@ -205,13 +207,13 @@ export function StickyNoteView({ noteId }: StickyNoteViewProps) {
           )}
         </div>
 
-        {/* Title input */}
+        {/* Title input — constrained so there's drag area on both sides */}
         <input
           className="sticky-title-input"
           value={title}
           onChange={handleTitleChange}
           placeholder="Note title"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+          style={{ WebkitAppRegion: 'no-drag', maxWidth: 160 } as React.CSSProperties}
         />
 
         {/* Right: pin + close */}

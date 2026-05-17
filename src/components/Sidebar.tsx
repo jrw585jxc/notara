@@ -238,10 +238,15 @@ export function Sidebar() {
 
   return (
     <aside className={`sidebar${sidebarCollapsed ? ' collapsed' : ''}`}>
-      <div className="sidebar-header" style={{ position: 'relative' }}>
-        <NotaraLogo />
-        <span className="sidebar-title">Notara</span>
-        <div className="sidebar-actions">
+      <div
+        className="sidebar-header"
+        style={{ position: 'relative', WebkitAppRegion: 'drag' } as React.CSSProperties}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <NotaraLogo />
+          <span className="sidebar-title">Notara</span>
+        </div>
+        <div className="sidebar-actions" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <button className="btn btn-icon btn-ghost" onClick={() => setSearchOpen(true)} title="Search (Ctrl+K)">
             <Search size={14} />
           </button>

@@ -29,6 +29,12 @@ export interface SearchResult {
   score: number
 }
 
+// Encryption config stored in vault
+export interface EncConfig {
+  salt: string            // hex, for PBKDF2 master-key derivation
+  verificationToken: string  // encrypted known string to verify master password
+}
+
 // Electron API exposed via preload
 export interface NotaraAPI {
   vault: {
@@ -36,6 +42,8 @@ export interface NotaraAPI {
     get: () => Promise<string | null>
     set: (path: string) => Promise<boolean>
     openInExplorer: (path: string) => Promise<void>
+    readEncConfig: (vaultPath: string) => Promise<EncConfig | null>
+    writeEncConfig: (vaultPath: string, config: EncConfig) => Promise<{ ok: boolean; error?: string }>
   }
   pages: {
     readAll: (vaultPath: string) => Promise<Array<{ filename: string; content: string }>>
@@ -48,18 +56,27 @@ export interface NotaraAPI {
     exportPdf: (suggestedName: string) => Promise<boolean>
   }
   prefs: {
-    getPinData: () => Promise<{ salt: string | null; verificationToken: string | null }>
-    setPinData: (salt: string, verificationToken: string) => Promise<void>
+    getPinData: () => Promise<{ salt: string | null; verificationToken: string | null; wrappedMasterKey?: string | null }>
+    setPinData: (data: { salt: string; verificationToken: string; wrappedMasterKey?: string }) => Promise<void>
     clearPinData: () => Promise<void>
   }
   media: {
     importFile: (vaultPath: string, fileType: 'image' | 'video' | 'audio' | 'file') => Promise<{ src: string; name: string; mimeType: string } | null>
     fetchBookmark: (url: string) => Promise<{ url: string; title: string; description: string; favicon: string }>
+    saveBuffer: (vaultPath: string, filename: string, buffer: ArrayBuffer) => Promise<{ src: string; name: string; mimeType: string } | null>
   }
   sticky: {
     open: (id: string) => Promise<void>
     close: () => Promise<void>
     setAlwaysOnTop: (alwaysOnTop: boolean) => Promise<void>
+    syncPage: (page: Page) => Promise<void>
+  }
+  window: {
+    minimize: () => Promise<void>
+    maximize: () => Promise<boolean>   // returns new isMaximized state
+    close: () => Promise<void>
+    isMaximized: () => Promise<boolean>
+    platform: () => Promise<string>
   }
   on: (channel: string, callback: (...args: any[]) => void) => (() => void) | undefined
 }

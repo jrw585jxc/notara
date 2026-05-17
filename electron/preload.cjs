@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('notara', {
     get: () => ipcRenderer.invoke('vault:get'),
     set: (path) => ipcRenderer.invoke('vault:set', path),
     openInExplorer: (path) => ipcRenderer.invoke('shell:openVault', path),
+    readEncConfig: (vaultPath) => ipcRenderer.invoke('vault:readEncConfig', vaultPath),
+    writeEncConfig: (vaultPath, config) => ipcRenderer.invoke('vault:writeEncConfig', { vaultPath, config }),
   },
   // Pages
   pages: {
@@ -30,12 +32,13 @@ contextBridge.exposeInMainWorld('notara', {
       ipcRenderer.invoke('media:importFile', { vaultPath, fileType }),
     fetchBookmark: (url) =>
       ipcRenderer.invoke('bookmark:fetch', url),
+    saveBuffer: (vaultPath, filename, buffer) =>
+      ipcRenderer.invoke('media:saveBuffer', { vaultPath, filename, buffer }),
   },
   // Prefs (PIN encryption)
   prefs: {
     getPinData: () => ipcRenderer.invoke('prefs:getPinData'),
-    setPinData: (salt, verificationToken) =>
-      ipcRenderer.invoke('prefs:setPinData', { salt, verificationToken }),
+    setPinData: (data) => ipcRenderer.invoke('prefs:setPinData', data),
     clearPinData: () => ipcRenderer.invoke('prefs:clearPinData'),
   },
   // Sticky notes
@@ -43,10 +46,27 @@ contextBridge.exposeInMainWorld('notara', {
     open: (id) => ipcRenderer.invoke('sticky:open', id),
     close: () => ipcRenderer.invoke('sticky:close'),
     setAlwaysOnTop: (alwaysOnTop) => ipcRenderer.invoke('sticky:setAlwaysOnTop', alwaysOnTop),
+    syncPage: (page) => ipcRenderer.invoke('sticky:syncPage', page),
   },
-  // Menu events
+  // Window controls (frameless)
+  window: {
+    minimize: () => ipcRenderer.invoke('window:minimize'),
+    maximize: () => ipcRenderer.invoke('window:maximize'),
+    close: () => ipcRenderer.invoke('window:close'),
+    isMaximized: () => ipcRenderer.invoke('window:isMaximized'),
+    platform: () => ipcRenderer.invoke('window:platform'),
+  },
+  // Event listeners (main → renderer)
   on: (channel, callback) => {
-    const valid = ['menu-new-page', 'menu-search', 'menu-toggle-sidebar', 'menu-choose-vault', 'menu-new-sticky']
+    const valid = [
+      'menu-new-page',
+      'menu-search',
+      'menu-toggle-sidebar',
+      'menu-choose-vault',
+      'menu-new-sticky',
+      'sticky:pageUpdated',
+      'window:maximized',
+    ]
     if (valid.includes(channel)) {
       ipcRenderer.on(channel, callback)
       return () => ipcRenderer.removeListener(channel, callback)

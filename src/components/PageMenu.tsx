@@ -35,13 +35,15 @@ export function PageMenu({ anchorRef, onClose }: Props) {
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
+      // Don't dismiss while a sub-modal (pin setup / disable) is open
+      if (showPinSetup || showPinDisable) return
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         onClose()
       }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [onClose])
+  }, [onClose, showPinSetup, showPinDisable])
 
   if (!page) return null
 
@@ -130,12 +132,12 @@ export function PageMenu({ anchorRef, onClose }: Props) {
               <Lock size={14} /> Lock now
             </div>
             <div className="page-menu-item" onClick={() => setShowPinDisable(true)}>
-              <Unlock size={14} /> Disable PIN Lock
+              <Unlock size={14} /> Disable Encryption
             </div>
           </>
         ) : (
           <div className="page-menu-item" onClick={() => setShowPinSetup(true)}>
-            <Shield size={14} /> Enable PIN Lock
+            <Shield size={14} /> Enable Encryption
           </div>
         )}
       </div>

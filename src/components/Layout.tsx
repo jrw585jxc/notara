@@ -6,6 +6,73 @@ import { SearchModal } from './SearchModal'
 import { PageMenu } from './PageMenu'
 import { useStore } from '../store/useStore'
 
+// ── Window controls (frameless, non-macOS) ────────────────────
+const isElectron = typeof window !== 'undefined' && typeof (window as any).notara !== 'undefined'
+
+function WindowControls() {
+  const [platform, setPlatform] = useState<string>('')
+  const [maximized, setMaximized] = useState(false)
+
+  useEffect(() => {
+    if (!isElectron) return
+    ;(window as any).notara.window.platform().then((p: string) => setPlatform(p))
+    ;(window as any).notara.window.isMaximized().then((m: boolean) => setMaximized(m))
+    const off = (window as any).notara.on('window:maximized', (_e: any, isMax: boolean) => {
+      setMaximized(isMax)
+    })
+    return () => off?.()
+  }, [])
+
+  if (!platform || platform === 'darwin') return null
+
+  return (
+    <div className="win-controls">
+      <div className="win-controls-sep" />
+      <button
+        className="win-btn win-btn-min"
+        onClick={() => (window as any).notara.window.minimize()}
+        title="Minimize"
+        tabIndex={-1}
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+          <rect x="0" y="5.5" width="10" height="1.5" rx="0.5" fill="currentColor"/>
+        </svg>
+      </button>
+      <button
+        className="win-btn win-btn-max"
+        onClick={async () => {
+          const next = await (window as any).notara.window.maximize()
+          setMaximized(next)
+        }}
+        title={maximized ? 'Restore' : 'Maximize'}
+        tabIndex={-1}
+      >
+        {maximized ? (
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <rect x="2.5" y="0.5" width="7" height="6" rx="0.5" stroke="currentColor" strokeWidth="1.4"/>
+            <rect x="0.5" y="3.5" width="7" height="6" rx="0.5" stroke="currentColor" strokeWidth="1.4" fill="var(--bg-base)"/>
+          </svg>
+        ) : (
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <rect x="0.5" y="0.5" width="9" height="9" rx="0.5" stroke="currentColor" strokeWidth="1.4"/>
+          </svg>
+        )}
+      </button>
+      <button
+        className="win-btn win-btn-close"
+        onClick={() => (window as any).notara.window.close()}
+        title="Close"
+        tabIndex={-1}
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+          <line x1="1.5" y1="1.5" x2="8.5" y2="8.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+          <line x1="8.5" y1="1.5" x2="1.5" y2="8.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+        </svg>
+      </button>
+    </div>
+  )
+}
+
 export function Layout() {
   const {
     sidebarCollapsed, searchOpen, toggleSidebar, setSearchOpen, createPage,
@@ -97,6 +164,9 @@ export function Layout() {
                 <MoreHorizontal size={15} />
               </button>
             )}
+
+            {/* Window controls — only on frameless non-macOS */}
+            <WindowControls />
           </div>
         </div>
 
