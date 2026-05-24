@@ -43,10 +43,12 @@ contextBridge.exposeInMainWorld('notara', {
   },
   // Sticky notes
   sticky: {
-    open: (id) => ipcRenderer.invoke('sticky:open', id),
+    open: (id, exportedKey) => ipcRenderer.invoke('sticky:open', { id, exportedKey: exportedKey || null }),
     close: () => ipcRenderer.invoke('sticky:close'),
     setAlwaysOnTop: (alwaysOnTop) => ipcRenderer.invoke('sticky:setAlwaysOnTop', alwaysOnTop),
     syncPage: (page) => ipcRenderer.invoke('sticky:syncPage', page),
+    getKey: (id) => ipcRenderer.invoke('sticky:getKey', id),
+    restoreOpen: (exportedKey) => ipcRenderer.invoke('sticky:restoreOpen', exportedKey || null),
   },
   // Window controls (frameless)
   window: {

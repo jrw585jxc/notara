@@ -4,6 +4,7 @@ import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
 import { Pin, PinOff, X, Bold, Italic, List, ListOrdered } from 'lucide-react'
 import { markdownToPage, pageToMarkdown } from '../lib/pageUtils'
+import { encryptText, decryptText } from '../lib/crypto'
 import { type Page, type StickyColor } from '../types'
 
 const isElectron = typeof window !== 'undefined' && typeof (window as any).notara !== 'undefined'
@@ -37,6 +38,7 @@ export function StickyNoteView({ noteId }: StickyNoteViewProps) {
   const [loading, setLoading] = useState(true)
   const pageRef = useRef<Page | null>(null)
   const vaultRef = useRef<string | null>(null)
+  const cryptoKeyRef = useRef<CryptoKey | null>(null)
 
   // Keep refs in sync so save callbacks always have fresh data
   useEffect(() => { pageRef.current = page }, [page])
@@ -61,9 +63,25 @@ export function StickyNoteView({ noteId }: StickyNoteViewProps) {
         vaultRef.current = v
         if (!v) return
 
+        // Get the encryption key from main process (if vault is encrypted)
+        const exportedKeyBytes: ArrayBuffer | null = await (window as any).notara.sticky.getKey(noteId)
+        if (exportedKeyBytes) {
+          try {
+            const ck = await window.crypto.subtle.importKey(
+              'raw', exportedKeyBytes, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
+            )
+            cryptoKeyRef.current = ck
+          } catch {}
+        }
+
         const files = await (window as any).notara.pages.readAll(v) as Array<{ filename: string; content: string }>
         for (const f of files) {
-          const p = markdownToPage(f.content, f.filename)
+          let raw = f.content
+          const ck = cryptoKeyRef.current
+          if (ck) {
+            try { raw = await decryptText(raw, ck) } catch { /* plaintext fallback */ }
+          }
+          const p = markdownToPage(raw, f.filename)
           if (p?.id === noteId) {
             setPage(p)
             pageRef.current = p
@@ -86,7 +104,9 @@ export function StickyNoteView({ noteId }: StickyNoteViewProps) {
     const updated = { ...p, ...updates, modified: new Date().toISOString() }
     setPage(updated)
     pageRef.current = updated
-    const md = pageToMarkdown(updated)
+    const ck = cryptoKeyRef.current
+    let md = pageToMarkdown(updated)
+    if (ck) md = await encryptText(md, ck)
     await (window as any).notara.pages.write(v, updated.filename, md)
     // Notify main window so sidebar stays in sync
     await (window as any).notara.sticky.syncPage(updated)

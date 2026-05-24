@@ -157,7 +157,10 @@ export const useStore = create<Store>((set, get) => ({
         // Decrypt if key is set
         if (cryptoKey) {
           try { raw = await decryptText(raw, cryptoKey) }
-          catch { return null } // skip files that fail decryption
+          catch {
+            // Decryption failed — file was likely saved as plaintext (e.g. a sticky note
+            // created before encryption was wired up). Fall through and try parsing as-is.
+          }
         }
         return markdownToPage(raw, f.filename)
       }))
@@ -348,6 +351,13 @@ export const useStore = create<Store>((set, get) => ({
       if (valid) {
         set({ cryptoKey: key, pinLocked: false, pinError: null })
         await get().loadPages()
+        // Re-open any sticky notes deferred until unlock
+        if (isElectron) {
+          try {
+            const exportedKey = await window.crypto.subtle.exportKey('raw', key)
+            await (window as any).notara.sticky.restoreOpen(exportedKey)
+          } catch {}
+        }
         return true
       } else {
         set({ pinError: 'Incorrect password. Try again.' })
@@ -387,6 +397,13 @@ export const useStore = create<Store>((set, get) => ({
 
       set({ cryptoKey: masterKey, pinLocked: false, pinError: null })
       await get().loadPages()
+      // Re-open any sticky notes that were deferred until unlock
+      if (isElectron) {
+        try {
+          const exportedKey = await window.crypto.subtle.exportKey('raw', masterKey)
+          await (window as any).notara.sticky.restoreOpen(exportedKey)
+        } catch {}
+      }
       return true
     } catch {
       set({ pinError: 'Incorrect PIN. Try again.' })
@@ -557,21 +574,32 @@ export const useStore = create<Store>((set, get) => ({
 
   // ── Sticky notes ────────────────────────────────────────────
   createStickyNote: async () => {
-    const { pages, vault } = get()
+    const { pages, vault, cryptoKey } = get()
     const stickies = pages.filter(p => p.kind === 'sticky')
     const page = createNewPage(null, stickies.length, 'sticky')
     const newPages = [...pages, page]
     set({ pages: newPages })
     if (vault && isElectron) {
-      const content = pageToMarkdown(page)
+      let content = pageToMarkdown(page)
+      if (cryptoKey) content = await encryptText(content, cryptoKey)
       await (window as any).notara.pages.write(vault, page.filename, content)
-      await (window as any).notara.sticky.open(page.id)
+      // Export key so the sticky window can encrypt its own saves
+      let exportedKey: ArrayBuffer | null = null
+      if (cryptoKey) {
+        try { exportedKey = await window.crypto.subtle.exportKey('raw', cryptoKey) } catch {}
+      }
+      await (window as any).notara.sticky.open(page.id, exportedKey)
     }
   },
 
   openStickyNote: async (id) => {
     if (!isElectron) return
-    await (window as any).notara.sticky.open(id)
+    const { cryptoKey } = get()
+    let exportedKey: ArrayBuffer | null = null
+    if (cryptoKey) {
+      try { exportedKey = await window.crypto.subtle.exportKey('raw', cryptoKey) } catch {}
+    }
+    await (window as any).notara.sticky.open(id, exportedKey)
   },
 
   // Called when a sticky note window updates its page (title / color / content)
@@ -582,5 +610,7 @@ export const useStore = create<Store>((set, get) => ({
     const newPages = [...pages]
     newPages[idx] = updatedPage
     set({ pages: newPages })
+    // Also persist to disk so the main window stays in sync
+    get().savePage(updatedPage.id)
   },
 }))

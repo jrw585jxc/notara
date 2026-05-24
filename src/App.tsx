@@ -44,16 +44,37 @@ export default function App() {
 
   if (isLoading) {
     return (
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        height: '100vh', color: 'var(--text-tertiary)', fontSize: 14, gap: 10,
-      }}>
-        <span style={{
-          display: 'inline-block', width: 16, height: 16,
-          border: '2px solid var(--border-default)', borderTopColor: 'var(--accent)',
-          borderRadius: '50%', animation: 'spin 0.8s linear infinite',
-        }} />
-        Loading your notes…
+      <div className="nt-splash">
+        {/* Animated Notara mark */}
+        <div className="nt-splash-mark">
+          <svg viewBox="0 0 32 32" width="38" height="38" xmlns="http://www.w3.org/2000/svg">
+            {/* The N stroke draws itself in */}
+            <path
+              className="nt-stroke"
+              d="M7 25 L7 7 L25 25 L25 7"
+              stroke="#f5f1e8"
+              strokeWidth="1.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              fill="none"
+              opacity="0.55"
+            />
+            {/* Five dots pop on sequentially */}
+            <circle className="nt-dot nt-dot-1" cx="7"  cy="25" r="2.6" fill="#f5f1e8" />
+            <circle className="nt-dot nt-dot-2" cx="7"  cy="7"  r="2.6" fill="#f5f1e8" />
+            <circle className="nt-dot nt-dot-3" cx="25" cy="25" r="2.6" fill="#f5f1e8" />
+            <circle className="nt-dot nt-dot-4" cx="25" cy="7"  r="2.6" fill="#f5f1e8" />
+            <circle className="nt-dot nt-dot-5" cx="16" cy="16" r="3.0" fill="#f5f1e8" />
+          </svg>
+        </div>
+
+        {/* Wordmark fades up */}
+        <span className="nt-splash-wordmark">Notara</span>
+
+        {/* Pulsing dots */}
+        <div className="nt-splash-dots">
+          <span /><span /><span />
+        </div>
       </div>
     )
   }

@@ -71,7 +71,7 @@ async function importKeyRaw(b64: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     'raw', raw,
     { name: 'AES-GCM', length: 256 },
-    false,                         // non-extractable once re-imported from prefs
+    true,                          // extractable — needed to share with sticky note windows
     ['encrypt', 'decrypt']
   )
 }

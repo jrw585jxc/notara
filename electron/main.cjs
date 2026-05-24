@@ -12,6 +12,7 @@ const PREFS_PATH = path.join(app.getPath('userData'), 'notara-prefs.json')
 let mainWindow = null
 let tray = null
 const stickyWindows = new Map()
+const stickyKeyMap = new Map() // noteId → exported AES key bytes (ArrayBuffer)
 
 // ── Single-instance lock ──────────────────────────────────────
 const gotTheLock = app.requestSingleInstanceLock()
@@ -38,24 +39,28 @@ function savePrefs(prefs) {
   try { fs.writeFileSync(PREFS_PATH, JSON.stringify(prefs, null, 2), 'utf-8') } catch {}
 }
 
-// ── Tray icon helper ──────────────────────────────────────────
+// ── Icon helpers (asar-safe) ──────────────────────────────────
+// nativeImage.createFromPath() silently returns empty inside an asar archive.
+// Always read the buffer ourselves and use createFromBuffer instead.
+function getIconDir() {
+  if (isDev) return path.join(__dirname, '..', 'build-resources')
+  // electron-forge asarUnpack extracts build-resources next to the asar
+  const unpacked = path.join(process.resourcesPath, 'app.asar.unpacked', 'build-resources')
+  if (fs.existsSync(unpacked)) return unpacked
+  // Fallback: inside the asar (icon loads may silently fail on Windows)
+  return path.join(__dirname, '..', 'build-resources')
+}
+
 function makeTrayIcon() {
+  const iconDir = getIconDir()
   const candidates = isMac
-    ? [
-        path.join(__dirname, '../build-resources/icon_16x16.png'),
-        path.join(__dirname, '../build-resources/icon_32x32.png'),
-        path.join(__dirname, '../build-resources/icon.png'),
-      ]
-    : [
-        path.join(__dirname, '../build-resources/icon.ico'),
-        path.join(__dirname, '../build-resources/icon_32x32.png'),
-        path.join(__dirname, '../build-resources/icon_16x16.png'),
-        path.join(__dirname, '../build-resources/icon.png'),
-      ]
-  for (const p of candidates) {
+    ? ['icon_16x16.png', 'icon_32x32.png', 'icon.png']
+    : ['icon.ico', 'icon_32x32.png', 'icon_16x16.png', 'icon.png']
+  for (const name of candidates) {
+    const p = path.join(iconDir, name)
     try {
       if (!fs.existsSync(p)) continue
-      const img = nativeImage.createFromPath(p)
+      const img = nativeImage.createFromBuffer(fs.readFileSync(p))
       if (img.isEmpty()) continue
       if (isMac) { img.setTemplateImage(true); return img.resize({ width: 16, height: 16 }) }
       return img
@@ -76,7 +81,18 @@ function createWindow() {
     height: prefs.height || 800,
     minWidth: 760,
     minHeight: 500,
-    icon: path.join(__dirname, '../build-resources/icon.png'),
+    icon: (() => {
+      const iconDir = getIconDir()
+      const icoPath = path.join(iconDir, 'icon.ico')
+      const pngPath = path.join(iconDir, 'icon.png')
+      try {
+        if (process.platform === 'win32' && fs.existsSync(icoPath))
+          return nativeImage.createFromBuffer(fs.readFileSync(icoPath))
+        if (fs.existsSync(pngPath))
+          return nativeImage.createFromBuffer(fs.readFileSync(pngPath))
+      } catch {}
+      return undefined
+    })(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -387,7 +403,8 @@ ipcMain.handle('prefs:clearPinData', () => {
 })
 
 // ── IPC: Sticky notes ─────────────────────────────────────────
-ipcMain.handle('sticky:open', async (_, id) => {
+function openStickyWindow(id, exportedKey) {
+  if (exportedKey) stickyKeyMap.set(id, exportedKey)
   if (stickyWindows.has(id)) {
     const existing = stickyWindows.get(id)
     if (!existing.isDestroyed()) { existing.show(); existing.focus(); return }
@@ -401,8 +418,17 @@ ipcMain.handle('sticky:open', async (_, id) => {
   })
   if (isDev) win.loadURL('http://localhost:5173/?sticky=' + encodeURIComponent(id))
   else win.loadFile(path.join(__dirname, '../dist-renderer/index.html'), { query: { sticky: id } })
-  win.on('closed', () => stickyWindows.delete(id))
+  win.on('closed', () => { stickyWindows.delete(id); stickyKeyMap.delete(id) })
   stickyWindows.set(id, win)
+}
+
+ipcMain.handle('sticky:open', async (_, { id, exportedKey }) => openStickyWindow(id, exportedKey || null))
+ipcMain.handle('sticky:getKey', (_, id) => stickyKeyMap.get(id) || null)
+ipcMain.handle('sticky:restoreOpen', async (_, exportedKey) => {
+  // Re-open all sticky windows that were open before a PIN-lock. Called after unlock.
+  for (const id of stickyWindows.keys()) {
+    openStickyWindow(id, exportedKey || null)
+  }
 })
 ipcMain.handle('sticky:close', (event) => { const win = BrowserWindow.fromWebContents(event.sender); if (win) win.close() })
 ipcMain.handle('sticky:setAlwaysOnTop', (event, alwaysOnTop) => { const win = BrowserWindow.fromWebContents(event.sender); if (win) win.setAlwaysOnTop(alwaysOnTop, 'floating') })
@@ -412,6 +438,18 @@ ipcMain.handle('sticky:syncPage', (_, page) => { if (mainWindow && !mainWindow.i
 app.whenReady().then(() => {
   createWindow()
   createTray()
+
+  // Fix Windows Settings icon: Squirrel sets DisplayIcon → Update.exe; override with Notara.exe
+  if (process.platform === 'win32' && app.isPackaged) {
+    try {
+      const { execFileSync } = require('child_process')
+      const exePath = app.getPath('exe')
+      const regKey = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Notara'
+      execFileSync('reg', ['add', regKey, '/v', 'DisplayIcon', '/t', 'REG_SZ', '/d', exePath, '/f'], { windowsHide: true })
+    } catch (e) {
+      console.warn('[icon] DisplayIcon registry update failed:', e.message)
+    }
+  }
 })
 
 app.on('window-all-closed', () => {

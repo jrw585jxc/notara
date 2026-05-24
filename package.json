@@ -72,12 +72,15 @@
         "executableName": "Notara",
         "icon": "build-resources/icon",
         "asar": true,
+        "asarUnpack": [
+          "build-resources/**",
+          "**/build-resources/**"
+        ],
         "ignore": [
           "^/src",
           "^/tsconfig",
           "^/vite\\.config",
           "^/eslint\\.config",
-          "^/build-resources",
           "^\\.git",
           "^/SETUP\\.md",
           "^/INSTALL\\.md",
