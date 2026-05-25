@@ -13,6 +13,7 @@ const LS_PAGES = 'notara:pages'
 const LS_VAULT = 'notara:vault'
 const LS_THEME = 'notara:theme'
 const LS_DEV_MODE = 'notara:devMode'
+const LS_ACCENT = 'notara:accent'
 const lsGetPages = (): Page[] => { try { return JSON.parse(localStorage.getItem(LS_PAGES) || '[]') } catch { return [] } }
 const lsSetPages = (p: Page[]) => { try { localStorage.setItem(LS_PAGES, JSON.stringify(p)) } catch {} }
 
@@ -44,9 +45,13 @@ interface Store {
   createPage: (parentId?: string | null, kind?: PageKind) => Page
   updatePage: (id: string, updates: Partial<Page>, save?: boolean) => void
   deletePage: (id: string) => Promise<void>
+  restorePage: (id: string) => Promise<void>
+  permanentlyDeletePage: (id: string) => Promise<void>
   savePage: (id: string) => Promise<void>
   reorderPage: (id: string, newParentId: string | null, newOrder: number) => void
   setTheme: (theme: Theme) => void
+  accentColor: string
+  setAccentColor: (id: string) => void
   toggleSidebar: () => void
   setSearchOpen: (open: boolean) => void
   setPageFont: (id: string, fontFamily: FontFamily) => void
@@ -87,6 +92,7 @@ export const useStore = create<Store>((set, get) => ({
   activePageId: null,
   vault: null,
   theme: (localStorage.getItem(LS_THEME) as Theme) || 'system',
+  accentColor: localStorage.getItem(LS_ACCENT) || 'orange',
   sidebarCollapsed: false,
   searchOpen: false,
   isLoading: false,
@@ -249,19 +255,43 @@ export const useStore = create<Store>((set, get) => ({
     } catch { set({ saveStatus: 'error' }) }
   },
 
+  // Soft-delete: moves page and descendants to trash (sets deleted timestamp)
   deletePage: async (id) => {
-    const { pages, vault, activePageId } = get()
+    const { pages, activePageId } = get()
     const idsToDelete = [id, ...getAllDescendantIds(pages, id)]
-    const newPages = pages.filter(p => !idsToDelete.includes(p.id))
-    const newActive = activePageId && idsToDelete.includes(activePageId) ? (newPages[0]?.id ?? null) : activePageId
+    const now = new Date().toISOString()
+    const newPages = pages.map(p => idsToDelete.includes(p.id) ? { ...p, deleted: now } : p)
+    const newActive = activePageId && idsToDelete.includes(activePageId)
+      ? (newPages.find(p => !p.deleted)?.id ?? null)
+      : activePageId
+    set({ pages: newPages, activePageId: newActive })
+    for (const did of idsToDelete) {
+      const p = newPages.find(pg => pg.id === did)
+      if (p) get().savePage(p.id)
+    }
+  },
+
+  restorePage: async (id) => {
+    const { pages } = get()
+    const newPages = pages.map(p => p.id === id ? { ...p, deleted: undefined } : p)
+    set({ pages: newPages })
+    get().savePage(id)
+  },
+
+  permanentlyDeletePage: async (id) => {
+    const { pages, vault, activePageId } = get()
+    const newPages = pages.filter(p => p.id !== id)
+    const newActive = activePageId === id ? (newPages.find(p => !p.deleted)?.id ?? null) : activePageId
     set({ pages: newPages, activePageId: newActive })
     if (vault) {
-      if (isElectron) {
-        for (const did of idsToDelete) {
-          const p = pages.find(pg => pg.id === did)
-          if (p) await (window as any).notara.pages.delete(vault, p.filename)
+      const page = pages.find(p => p.id === id)
+      if (page) {
+        if (isElectron) {
+          await (window as any).notara.pages.delete(vault, page.filename)
+        } else {
+          lsSetPages(newPages)
         }
-      } else lsSetPages(newPages)
+      }
     }
   },
 
@@ -274,6 +304,7 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   setTheme: (theme) => { localStorage.setItem(LS_THEME, theme); set({ theme }) },
+  setAccentColor: (id) => { localStorage.setItem(LS_ACCENT, id); set({ accentColor: id }) },
   toggleSidebar: () => set(s => ({ sidebarCollapsed: !s.sidebarCollapsed })),
   setSearchOpen: (open) => set({ searchOpen: open }),
 

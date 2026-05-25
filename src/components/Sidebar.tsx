@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
-import { Search, Plus, Moon, Sun, Monitor, FolderOpen, ChevronLeft, Folder, Minus, StickyNote } from 'lucide-react'
+import { Search, Plus, Moon, Sun, Monitor, FolderOpen, ChevronLeft, Folder, Minus, StickyNote, Trash2, RotateCcw, X, ChevronDown, Palette } from 'lucide-react'
 import {
   DndContext, DragOverlay, PointerSensor, useSensor, useSensors,
   type DragEndEvent, type DragOverEvent, type DragStartEvent,
@@ -21,16 +21,17 @@ import { type Theme } from '../types'
 import { useStore } from '../store/useStore'
 import { buildTree, getAllDescendantIds } from '../lib/pageUtils'
 import { SidebarItem } from './SidebarItem'
+import { ACCENT_PALETTE } from '../lib/accentColors'
 
-// ── Drag context ──────────────────────────────────────────────
+// -- Drag context
 export interface DragCtxValue {
   draggingId: string | null
-  overDropId: string | null   // e.g. "before:abc", "inside:abc", "after:abc"
+  overDropId: string | null
 }
 export const SidebarDragCtx = createContext<DragCtxValue>({ draggingId: null, overDropId: null })
 export const useSidebarDrag = () => useContext(SidebarDragCtx)
 
-// ── New item dropdown ─────────────────────────────────────────
+// -- New item dropdown
 function NewItemDropdown({ onClose }: { onClose: () => void }) {
   const { createPage } = useStore()
   const ref = useRef<HTMLDivElement>(null)
@@ -70,7 +71,7 @@ function NewItemDropdown({ onClose }: { onClose: () => void }) {
   )
 }
 
-// ── Sticky note sidebar item ──────────────────────────────────
+// -- Sticky note sidebar item
 function StickyItem({ page }: { page: import('../types').Page }) {
   const { deletePage, openStickyNote } = useStore()
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
@@ -110,18 +111,37 @@ function StickyItem({ page }: { page: import('../types').Page }) {
   )
 }
 
-// ── Sidebar ───────────────────────────────────────────────────
+// -- Sidebar
 export function Sidebar() {
   const {
     pages, activePageId, vault, theme, setSearchOpen, setTheme,
     toggleSidebar, sidebarCollapsed, reorderPage, createStickyNote,
+    restorePage, permanentlyDeletePage, accentColor, setAccentColor,
   } = useStore()
-  const rootPages = buildTree(pages).filter(p => p.kind !== 'sticky')
-  const stickyPages = [...pages].filter(p => p.kind === 'sticky').sort((a, b) => a.order - b.order)
-  const [showNewDropdown, setShowNewDropdown] = useState(false)
-  const plusBtnRef = useRef<HTMLButtonElement>(null)
 
-  // Resizable divider between pages and stickies
+  const rootPages = buildTree(pages).filter(p => p.kind !== 'sticky')
+  const stickyPages = [...pages].filter(p => p.kind === 'sticky' && !p.deleted).sort((a, b) => a.order - b.order)
+  const trashedPages = [...pages].filter(p => p.deleted && p.kind !== 'sticky').sort((a, b) =>
+    (b.deleted ?? '').localeCompare(a.deleted ?? '')
+  )
+
+  const [trashOpen, setTrashOpen] = useState(false)
+  const [showNewDropdown, setShowNewDropdown] = useState(false)
+  const [showAccentPicker, setShowAccentPicker] = useState(false)
+  const plusBtnRef = useRef<HTMLButtonElement>(null)
+  const accentPickerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!showAccentPicker) return
+    const handler = (e: MouseEvent) => {
+      if (accentPickerRef.current && !accentPickerRef.current.contains(e.target as Node)) {
+        setShowAccentPicker(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showAccentPicker])
+
   const [pagesHeight, setPagesHeight] = useState<number | null>(null)
   const dividerRef = useRef<HTMLDivElement>(null)
   const draggingDivider = useRef(false)
@@ -150,7 +170,6 @@ export function Sidebar() {
     window.addEventListener('mouseup', onUp)
   }, [pagesHeight])
 
-  // Drag state
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [overDropId, setOverDropId] = useState<string | null>(null)
 
@@ -175,53 +194,37 @@ export function Sidebar() {
     }
   }
 
-  const handleDragStart = (event: DragStartEvent) => {
-    setDraggingId(event.active.id as string)
-  }
-
-  const handleDragOver = (event: DragOverEvent) => {
-    setOverDropId(event.over ? (event.over.id as string) : null)
-  }
+  const handleDragStart = (event: DragStartEvent) => { setDraggingId(event.active.id as string) }
+  const handleDragOver  = (event: DragOverEvent)  => { setOverDropId(event.over ? (event.over.id as string) : null) }
 
   const handleDragEnd = (event: DragEndEvent) => {
     setDraggingId(null)
     setOverDropId(null)
-
     const { active, over } = event
     if (!over) return
-
     const draggedId = active.id as string
     const overId = over.id as string
     const colonIdx = overId.indexOf(':')
     if (colonIdx === -1) return
-
-    const position = overId.slice(0, colonIdx)         // 'before' | 'inside' | 'after'
+    const position = overId.slice(0, colonIdx)
     const targetId = overId.slice(colonIdx + 1)
-
     if (draggedId === targetId) return
-
     const draggedPage = pages.find(p => p.id === draggedId)
     const targetPage  = pages.find(p => p.id === targetId)
     if (!draggedPage || !targetPage) return
-
-    // Don't allow dropping a parent onto its own descendant
     if (getAllDescendantIds(pages, draggedId).includes(targetId)) return
-
     let newParentId: string | null
     let newOrder: number
-
     if (position === 'inside') {
       newParentId = targetId
       const children = pages.filter(p => p.parentId === targetId && p.id !== draggedId)
       newOrder = children.length > 0 ? Math.max(...children.map(c => c.order)) + 1 : 0
     } else {
-      // before / after — sibling of target
       newParentId = targetPage.parentId
       const siblings = pages
         .filter(p => p.parentId === newParentId && p.id !== draggedId)
         .sort((a, b) => a.order - b.order)
       const targetIdx = siblings.findIndex(s => s.id === targetId)
-
       if (position === 'before') {
         const prev = siblings[targetIdx - 1]
         newOrder = prev ? (prev.order + targetPage.order) / 2 : targetPage.order - 1
@@ -230,7 +233,6 @@ export function Sidebar() {
         newOrder = next ? (targetPage.order + next.order) / 2 : targetPage.order + 1
       }
     }
-
     reorderPage(draggedId, newParentId, newOrder)
   }
 
@@ -242,14 +244,14 @@ export function Sidebar() {
         className="sidebar-header"
         style={{ position: 'relative', WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <NotaraLogo />
           <span className="sidebar-title">Notara</span>
-        </div>
-        <div className="sidebar-actions" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <button className="btn btn-icon btn-ghost" onClick={() => setSearchOpen(true)} title="Search (Ctrl+K)">
             <Search size={14} />
           </button>
+        </div>
+        <div className="sidebar-actions" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <button
             ref={plusBtnRef}
             className="btn btn-icon btn-ghost"
@@ -274,7 +276,6 @@ export function Sidebar() {
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
         >
-          {/* Pages section */}
           <div
             ref={sidebarBodyRef}
             className="sidebar-body"
@@ -293,7 +294,6 @@ export function Sidebar() {
               ))
             )}
           </div>
-
           <DragOverlay dropAnimation={null}>
             {draggedPage && (
               <div className="sidebar-drag-overlay">
@@ -307,17 +307,14 @@ export function Sidebar() {
         </DndContext>
       </SidebarDragCtx.Provider>
 
-      {/* Sticky notes section */}
       {stickyPages.length > 0 && (
         <>
-          {/* Resizable divider */}
           <div
             ref={dividerRef}
             className="sidebar-divider"
             onMouseDown={onDividerMouseDown}
             title="Drag to resize"
           />
-
           <div className="sidebar-stickies">
             <div className="sidebar-stickies-header">
               <StickyNote size={11} style={{ opacity: 0.5 }} />
@@ -338,7 +335,42 @@ export function Sidebar() {
         </>
       )}
 
-      <div className="sidebar-footer">
+      {trashedPages.length > 0 && (
+        <div className="sidebar-trash">
+          <button className="sidebar-trash-header" onClick={() => setTrashOpen(v => !v)}>
+            <Trash2 size={12} />
+            <span style={{ fontSize: 13, flex: 1 }}>Trash</span>
+            <span className="sidebar-trash-count">{trashedPages.length}</span>
+            <ChevronDown size={11} className={`sidebar-trash-chevron${trashOpen ? ' open' : ''}`} />
+          </button>
+          {trashOpen && (
+            <div className="sidebar-trash-list">
+              {trashedPages.map(p => (
+                <div key={p.id} className="sidebar-trash-item">
+                  <span className="sidebar-trash-emoji">{p.emoji}</span>
+                  <span className="sidebar-trash-title">{p.title || 'Untitled'}</span>
+                  <button className="btn btn-icon btn-ghost sidebar-trash-action" title="Restore" onClick={() => restorePage(p.id)}>
+                    <RotateCcw size={11} />
+                  </button>
+                  <button
+                    className="btn btn-icon btn-ghost sidebar-trash-action danger"
+                    title="Delete permanently"
+                    onClick={() => {
+                      if (confirm(`Permanently delete "${p.title || 'Untitled'}"? This cannot be undone.`)) {
+                        permanentlyDeletePage(p.id)
+                      }
+                    }}
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="sidebar-footer" style={{ position: 'relative' }}>
         <button className="btn btn-icon btn-ghost" onClick={cycleTheme} title={'Theme: ' + theme}>
           {themeIcons[theme]}
         </button>
@@ -347,6 +379,33 @@ export function Sidebar() {
             <FolderOpen size={14} />
           </button>
         )}
+        <div ref={accentPickerRef} style={{ position: 'relative' }}>
+          <button
+            className="btn btn-icon btn-ghost"
+            onClick={() => setShowAccentPicker(v => !v)}
+            title="Accent color"
+            style={{ position: 'relative' }}
+          >
+            <Palette size={14} />
+            <span className="accent-picker-dot" style={{ background: 'var(--accent)' }} />
+          </button>
+          {showAccentPicker && (
+            <div className="accent-picker-popup">
+              <div className="accent-picker-label">Accent</div>
+              <div className="accent-picker-swatches">
+                {ACCENT_PALETTE.map(c => (
+                  <button
+                    key={c.id}
+                    className={`accent-swatch${accentColor === c.id ? ' active' : ''}`}
+                    style={{ background: c.swatch }}
+                    title={c.label}
+                    onClick={() => { setAccentColor(c.id); setShowAccentPicker(false) }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
         <span style={{ flex: 1 }} />
         <button
           className="btn btn-icon btn-ghost"

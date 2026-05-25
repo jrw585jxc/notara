@@ -1,6 +1,9 @@
 // ── Core types ────────────────────────────────────────────────
 
-export type FontFamily = 'sans' | 'serif' | 'mono'
+export type FontFamily =
+  | 'sans' | 'humanist' | 'rounded' | 'trebuchet' | 'tahoma'
+  | 'serif' | 'palatino' | 'cambria' | 'garamond' | 'times' | 'slab'
+  | 'mono' | 'courier' | 'menlo'
 export type PageKind = 'page' | 'folder' | 'section' | 'sticky'
 export type StickyColor = 'yellow' | 'blue' | 'green' | 'pink' | 'purple' | 'black' | 'white'
 
@@ -19,6 +22,7 @@ export interface Page {
   fullWidth: boolean
   kind: PageKind       // 'page' (default), 'folder', 'section', or 'sticky'
   color?: StickyColor  // sticky note color
+  deleted?: string     // ISO 8601 timestamp when moved to trash; undefined = not deleted
 }
 
 export type Theme = 'light' | 'dark' | 'system'

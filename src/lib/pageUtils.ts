@@ -33,6 +33,7 @@ export function pageToMarkdown(page: Page): string {
     'fullWidth: ' + String(page.fullWidth ?? false),
     'kind: "' + (page.kind || 'page') + '"',
     ...(page.color ? ['color: "' + page.color + '"'] : []),
+    ...(page.deleted ? ['deleted: "' + page.deleted + '"'] : []),
     '---',
     '',
   ]
@@ -84,6 +85,8 @@ export function markdownToPage(raw: string, diskFilename?: string): Page | null 
     const color: StickyColor | undefined = ['yellow', 'blue', 'green', 'pink', 'purple', 'black', 'white'].includes(colorRaw)
       ? (colorRaw as StickyColor) : undefined
 
+    const deletedRaw = getStr('deleted', '')
+
     return {
       id,
       title,
@@ -99,16 +102,17 @@ export function markdownToPage(raw: string, diskFilename?: string): Page | null 
       fullWidth: fullWidthRaw === 'true',
       kind,
       color,
+      ...(deletedRaw ? { deleted: deletedRaw } : {}),
     }
   } catch { return null }
 }
 
 export function buildTree(pages: Page[]): Page[] {
-  return [...pages].filter(p => p.parentId === null).sort((a, b) => a.order - b.order)
+  return [...pages].filter(p => p.parentId === null && !p.deleted).sort((a, b) => a.order - b.order)
 }
 
 export function getChildren(pages: Page[], parentId: string): Page[] {
-  return pages.filter(p => p.parentId === parentId).sort((a, b) => a.order - b.order)
+  return pages.filter(p => p.parentId === parentId && !p.deleted).sort((a, b) => a.order - b.order)
 }
 
 export function getAllDescendantIds(pages: Page[], pageId: string): string[] {
@@ -119,7 +123,7 @@ export function getAllDescendantIds(pages: Page[], pageId: string): string[] {
 export function searchPages(pages: Page[], query: string, limit = 20) {
   if (!query.trim()) return []
   const q = query.toLowerCase()
-  return pages.map(page => {
+  return pages.filter(p => !p.deleted).map(page => {
     const titleMatch = page.title.toLowerCase().includes(q)
     const contentText = page.content.replace(/<[^>]+>/g, ' ').toLowerCase()
     const contentMatch = contentText.includes(q)

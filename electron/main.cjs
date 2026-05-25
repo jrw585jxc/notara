@@ -121,19 +121,13 @@ function createWindow() {
   mainWindow.webContents.session.setSpellCheckerEnabled(true)
   if (!isMac) mainWindow.webContents.session.setSpellCheckerLanguages(['en-US', 'en-GB'])
 
-  // Spellcheck context menu for Windows/Linux
+  // Spellcheck — send suggestions to the renderer's custom context menu
   mainWindow.webContents.on('context-menu', (_e, params) => {
     if (!params.misspelledWord) return
-    const menu = Menu.buildFromTemplate(
-      params.dictionarySuggestions.slice(0, 6).map(word => ({
-        label: word,
-        click: () => mainWindow.webContents.replaceMisspelling(word),
-      })).concat([
-        { type: 'separator' },
-        { label: `Add "${params.misspelledWord}" to dictionary`, click: () => mainWindow.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord) },
-      ])
-    )
-    menu.popup()
+    mainWindow.webContents.send('spellcheck:context', {
+      word: params.misspelledWord,
+      suggestions: params.dictionarySuggestions.slice(0, 6),
+    })
   })
 
   // Notify renderer when maximize state changes
@@ -433,6 +427,10 @@ ipcMain.handle('sticky:restoreOpen', async (_, exportedKey) => {
 ipcMain.handle('sticky:close', (event) => { const win = BrowserWindow.fromWebContents(event.sender); if (win) win.close() })
 ipcMain.handle('sticky:setAlwaysOnTop', (event, alwaysOnTop) => { const win = BrowserWindow.fromWebContents(event.sender); if (win) win.setAlwaysOnTop(alwaysOnTop, 'floating') })
 ipcMain.handle('sticky:syncPage', (_, page) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('sticky:pageUpdated', page) })
+
+// ── IPC: Spellcheck ───────────────────────────────────────────
+ipcMain.handle('spellcheck:replace', (_, word) => mainWindow?.webContents.replaceMisspelling(word))
+ipcMain.handle('spellcheck:addWord', (_, word) => mainWindow?.webContents.session.addWordToSpellCheckerDictionary(word))
 
 // ── App lifecycle ─────────────────────────────────────────────
 app.whenReady().then(() => {

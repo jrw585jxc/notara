@@ -176,7 +176,8 @@ function ColorPanel({
 }
 
 // ── Context menu (right-click) ────────────────────────────────
-interface CtxMenu { x: number; y: number }
+interface SpellcheckData { word: string; suggestions: string[] }
+interface CtxMenu { x: number; y: number; spellcheck?: SpellcheckData | null }
 
 function ContextMenu({
   pos, editor, onClose,
@@ -207,8 +208,35 @@ function ContextMenu({
     zIndex: 800,
   }
 
+  const notara = (window as any).notara
+
   return (
     <div ref={ref} className="context-menu ctx-rich" style={menuStyle}>
+      {pos.spellcheck && (
+        <>
+          {pos.spellcheck.suggestions.length > 0
+            ? pos.spellcheck.suggestions.map(word => (
+                <div
+                  key={word}
+                  className="context-menu-item context-menu-item-spell"
+                  onMouseDown={e => { e.preventDefault(); notara?.spellcheck?.replace(word); onClose() }}
+                >
+                  {word}
+                </div>
+              ))
+            : <div className="context-menu-item context-menu-item-muted" style={{ pointerEvents: 'none' }}>
+                No suggestions
+              </div>
+          }
+          <div
+            className="context-menu-item context-menu-item-muted"
+            onMouseDown={e => { e.preventDefault(); notara?.spellcheck?.addWord(pos.spellcheck!.word); onClose() }}
+          >
+            Add "{pos.spellcheck.word}" to dictionary
+          </div>
+          <div className="context-menu-sep" />
+        </>
+      )}
       {hasSelection && (
         <>
           <div className="ctx-format-row">
@@ -411,6 +439,17 @@ export function BlockEditor({ content, onChange, devMode }: Props) {
     setSlashStart(null)
   }, [])
 
+  // Spellcheck: receive suggestions from main process before the menu opens
+  const spellcheckRef = useRef<SpellcheckData | null>(null)
+  useEffect(() => {
+    if (!isElectron || typeof (window as any).notara?.on !== 'function') return
+    const off = (window as any).notara.on(
+      'spellcheck:context',
+      (_: unknown, data: SpellcheckData) => { spellcheckRef.current = data },
+    )
+    return () => { if (typeof off === 'function') off() }
+  }, [])
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
@@ -577,7 +616,13 @@ export function BlockEditor({ content, onChange, devMode }: Props) {
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
-    setContextMenu({ x: e.clientX, y: e.clientY })
+    const x = e.clientX, y = e.clientY
+    // Brief pause so the spellcheck:context IPC from main can arrive and
+    // populate spellcheckRef before the menu is rendered.
+    setTimeout(() => {
+      setContextMenu({ x, y, spellcheck: spellcheckRef.current })
+      spellcheckRef.current = null
+    }, 30)
   }, [])
 
   if (!editor) return null

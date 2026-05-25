@@ -58,6 +58,11 @@ contextBridge.exposeInMainWorld('notara', {
     isMaximized: () => ipcRenderer.invoke('window:isMaximized'),
     platform: () => ipcRenderer.invoke('window:platform'),
   },
+  // Spellcheck
+  spellcheck: {
+    replace: (word) => ipcRenderer.invoke('spellcheck:replace', word),
+    addWord: (word) => ipcRenderer.invoke('spellcheck:addWord', word),
+  },
   // Event listeners (main → renderer)
   on: (channel, callback) => {
     const valid = [
@@ -68,6 +73,7 @@ contextBridge.exposeInMainWorld('notara', {
       'menu-new-sticky',
       'sticky:pageUpdated',
       'window:maximized',
+      'spellcheck:context',
     ]
     if (valid.includes(channel)) {
       ipcRenderer.on(channel, callback)

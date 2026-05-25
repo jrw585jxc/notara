@@ -3,9 +3,10 @@ import { useStore } from './store/useStore'
 import { Layout } from './components/Layout'
 import { VaultSetup } from './components/VaultSetup'
 import { PinScreen } from './components/PinScreen'
+import { applyAccentColor } from './lib/accentColors'
 
 export default function App() {
-  const { vault, theme, isLoading, initVault, pinEnabled, pinLocked, createStickyNote, syncPageFromSticky } = useStore()
+  const { vault, theme, accentColor, isLoading, initVault, pinEnabled, pinLocked, createStickyNote, syncPageFromSticky } = useStore()
 
   useEffect(() => { initVault() }, []) // eslint-disable-line
 
@@ -27,20 +28,24 @@ export default function App() {
 
   useEffect(() => {
     const root = document.documentElement
+
+    const applyThemeAndAccent = (isDark: boolean) => {
+      root.setAttribute('data-theme', isDark ? 'dark' : 'light')
+      applyAccentColor(accentColor, isDark ? 'dark' : 'light')
+    }
+
     if (theme === 'dark') {
-      root.setAttribute('data-theme', 'dark')
+      applyThemeAndAccent(true)
     } else if (theme === 'light') {
-      root.setAttribute('data-theme', 'light')
+      applyThemeAndAccent(false)
     } else {
       const mq = window.matchMedia('(prefers-color-scheme: dark)')
-      root.setAttribute('data-theme', mq.matches ? 'dark' : 'light')
-      const handler = (e: MediaQueryListEvent) => {
-        root.setAttribute('data-theme', e.matches ? 'dark' : 'light')
-      }
+      applyThemeAndAccent(mq.matches)
+      const handler = (e: MediaQueryListEvent) => applyThemeAndAccent(e.matches)
       mq.addEventListener('change', handler)
       return () => mq.removeEventListener('change', handler)
     }
-  }, [theme])
+  }, [theme, accentColor])
 
   if (isLoading) {
     return (
