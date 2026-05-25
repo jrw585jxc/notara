@@ -3,7 +3,7 @@
   <h1>Notara</h1>
   <p><strong>Private, offline-first note-taking — fast, encrypted, yours.</strong></p>
 
-  [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+  [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE.md)
   [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue)](https://github.com/jrw585jxc/notara/releases/latest)
   [![Built with Electron](https://img.shields.io/badge/built%20with-Electron-47848F)](https://www.electronjs.org/)
 
@@ -332,7 +332,7 @@ If you're planning something large, open an issue first to discuss it. The prior
 
 MIT © Notara contributors
 
-You're free to use, modify, and distribute this software. See [LICENSE](LICENSE) for the full text.
+You're free to use, modify, and distribute this software. See [LICENSE](LICENSE.md) for the full text.
 
 ---
 
