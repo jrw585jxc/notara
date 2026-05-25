@@ -9,7 +9,7 @@
 
   <br />
 
-  [**Download for Windows (.exe)**](https://github.com/jrw585jxc/notara/releases/latest) &nbsp;·&nbsp; [**Download for macOS (.dmg)**](https://github.com/jrw585jxc/notara/releases/latest) &nbsp;·&nbsp; [View all releases](https://github.com/jrw585jxc/notara/releases)
+  [**Download for Windows (.exe)**](https://github.com/jrw585jxc/notara/releases/download/v1.0.0/Notara-Setup.exe) &nbsp;·&nbsp; [**Download for macOS (.dmg)**](https://github.com/jrw585jxc/notara/releases/download/v1.0.0/Notara-mac-1.0.0.zip) &nbsp;·&nbsp; [View all releases](https://github.com/jrw585jxc/notara/releases)
 
 </div>
 
