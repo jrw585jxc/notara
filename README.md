@@ -229,7 +229,7 @@ The PIN is a convenience shortcut. Internally it derives its own AES-256 key via
 
 ### macOS
 
-1. Download **Notara-darwin-universal.zip** from the [latest release](https://github.com/jrw585jxc/notara/releases/latest).
+1. Download **Notara-mac-1.0.0.zip** from the [latest release](https://github.com/jrw585jxc/notara/releases/latest).
 2. Unzip and drag **Notara.app** into your Applications folder.
 3. On first launch, right-click the app and choose **Open** to bypass the Gatekeeper warning for unsigned apps.
 
