@@ -5,6 +5,32 @@ const { app, BrowserWindow, ipcMain, dialog, shell, Menu, Tray, nativeImage, ses
 const path = require('path')
 const fs = require('fs')
 
+// ── Offline spell checker (nspell + bundled en_US dictionary) ─────────────
+let _spellChecker = null
+function getSpellChecker() {
+  if (_spellChecker) return _spellChecker
+  try {
+    // Use explicit paths so resolution works the same inside an asar archive
+    // and in plain dev mode.
+    const nspellPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'nspell', 'lib', 'index.js')
+      : path.join(__dirname, '..', 'node_modules', 'nspell', 'lib', 'index.js')
+    const dictDir = app.isPackaged
+      ? path.join(process.resourcesPath, 'app.asar.unpacked', 'dictionaries')
+      : path.join(__dirname, '..', 'dictionaries')
+    const nspell = require(nspellPath)
+    const aff = fs.readFileSync(path.join(dictDir, 'en_US.aff'))
+    const dic = fs.readFileSync(path.join(dictDir, 'en_US.dic'))
+    _spellChecker = nspell({ aff, dic })
+    console.log('[spellcheck] Dictionary loaded OK')
+  } catch (e) {
+    console.error('[spellcheck] Failed to load dictionary:', e.message)
+  }
+  return _spellChecker
+}
+// Pre-load eagerly so the first right-click has no delay
+app.whenReady().then(() => getSpellChecker())
+
 const isDev = process.env.NODE_ENV === 'development'
 const isMac = process.platform === 'darwin'
 const PREFS_PATH = path.join(app.getPath('userData'), 'notara-prefs.json')
@@ -121,14 +147,9 @@ function createWindow() {
   mainWindow.webContents.session.setSpellCheckerEnabled(true)
   if (!isMac) mainWindow.webContents.session.setSpellCheckerLanguages(['en-US', 'en-GB'])
 
-  // Spellcheck — send suggestions to the renderer's custom context menu
-  mainWindow.webContents.on('context-menu', (_e, params) => {
-    if (!params.misspelledWord) return
-    mainWindow.webContents.send('spellcheck:context', {
-      word: params.misspelledWord,
-      suggestions: params.dictionarySuggestions.slice(0, 6),
-    })
-  })
+  // Spellcheck suggestions are now fetched on-demand via spellcheck:check IPC
+  // (webContents.isWordMisspelled / getWordSuggestions) — no context-menu
+  // listener needed here.
 
   // Notify renderer when maximize state changes
   mainWindow.on('maximize',   () => mainWindow?.webContents.send('window:maximized', true))
@@ -431,6 +452,15 @@ ipcMain.handle('sticky:syncPage', (_, page) => { if (mainWindow && !mainWindow.i
 // ── IPC: Spellcheck ───────────────────────────────────────────
 ipcMain.handle('spellcheck:replace', (_, word) => mainWindow?.webContents.replaceMisspelling(word))
 ipcMain.handle('spellcheck:addWord', (_, word) => mainWindow?.webContents.session.addWordToSpellCheckerDictionary(word))
+// Check a word using the bundled offline dictionary
+ipcMain.handle('spellcheck:check', (_, word) => {
+  if (!word) return { isMisspelled: false, suggestions: [] }
+  const spell = getSpellChecker()
+  if (!spell) return { isMisspelled: false, suggestions: [] }
+  const isMisspelled = !spell.correct(word)
+  const suggestions = isMisspelled ? spell.suggest(word).slice(0, 6) : []
+  return { isMisspelled, suggestions }
+})
 
 // ── App lifecycle ─────────────────────────────────────────────
 app.whenReady().then(() => {

@@ -1496,10 +1496,14 @@ html, body, #root {
   gap: 6px;
   padding: 6px 8px;
   background: var(--sticky-header, #fde047);
+  background-image: radial-gradient(circle, rgba(0,0,0,0.18) 1px, transparent 1px);
+  background-size: 7px 7px;
   height: 36px;
   flex-shrink: 0;
   position: relative;
+  cursor: grab;
 }
+.sticky-header:active { cursor: grabbing; }
 
 .sticky-color-btn {
   width: 14px;
@@ -1648,6 +1652,44 @@ html, body, #root {
   color: rgba(0,0,0,0.3);
   pointer-events: none;
   height: 0;
+}
+
+/* Task list (to-do) inside sticky notes */
+.sticky-editor ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+  margin-bottom: 4px;
+}
+.sticky-editor ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-bottom: 3px;
+}
+.sticky-editor ul[data-type="taskList"] li > label {
+  flex-shrink: 0;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+}
+.sticky-editor ul[data-type="taskList"] li > label input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--sticky-text, #713f12);
+  cursor: pointer;
+}
+.sticky-editor ul[data-type="taskList"] li > div {
+  flex: 1;
+  /* fix: user-select blocked by .sticky-window; re-enable here */
+  user-select: text;
+  -webkit-user-select: text;
+  caret-color: var(--sticky-text, #713f12);
+  min-width: 0;
+  outline: none;
+}
+.sticky-editor ul[data-type="taskList"] li[data-checked="true"] > div {
+  text-decoration: line-through;
+  opacity: 0.5;
 }
 
 .sticky-footer {

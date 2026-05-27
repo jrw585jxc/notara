@@ -9,8 +9,8 @@ import { useSidebarDrag } from './Sidebar'
 interface Props { page: Page; depth: number; isActive: boolean }
 
 export function SidebarItem({ page, depth, isActive }: Props) {
-  const { pages, activePageId, setActivePage, createPage, deletePage, updatePage, devMode } = useStore()
-  const [expanded, setExpanded] = useState(depth === 0)
+  const { pages, activePageId, setActivePage, createPage, deletePage, updatePage, devMode, isPageExpanded, setExpandedPage, toggleExpandedPage } = useStore()
+  const expanded = isPageExpanded(page.id)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [renaming, setRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState(page.title)
@@ -107,11 +107,11 @@ export function SidebarItem({ page, depth, isActive }: Props) {
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation()
-    if (isFolder) { setExpanded(v => !v) }
+    if (isFolder) { toggleExpandedPage(page.id) }
     else { setActivePage(page.id) }
   }
-  const handleToggle = (e: React.MouseEvent) => { e.stopPropagation(); setExpanded(v => !v) }
-  const handleAddChild = (e: React.MouseEvent) => { e.stopPropagation(); createPage(page.id, 'page'); setExpanded(true) }
+  const handleToggle = (e: React.MouseEvent) => { e.stopPropagation(); toggleExpandedPage(page.id) }
+  const handleAddChild = (e: React.MouseEvent) => { e.stopPropagation(); createPage(page.id, 'page'); setExpandedPage(page.id, true) }
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation()
     setContextMenu({ x: e.clientX, y: e.clientY })
@@ -208,7 +208,7 @@ export function SidebarItem({ page, depth, isActive }: Props) {
           <div style={{ position: 'fixed', inset: 0, zIndex: 499 }} onClick={closeContext} />
           <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={e => e.stopPropagation()}>
             <div className="context-menu-item" onClick={handleRename}><Edit3 size={13} /> Rename</div>
-            <div className="context-menu-item" onClick={() => { closeContext(); createPage(page.id, 'page'); setExpanded(true) }}>
+            <div className="context-menu-item" onClick={() => { closeContext(); createPage(page.id, 'page'); setExpandedPage(page.id, true) }}>
               <Plus size={13} /> Add page inside
             </div>
             {!isFolder && (

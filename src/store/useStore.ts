@@ -14,6 +14,8 @@ const LS_VAULT = 'notara:vault'
 const LS_THEME = 'notara:theme'
 const LS_DEV_MODE = 'notara:devMode'
 const LS_ACCENT = 'notara:accent'
+const LS_ACTIVE_PAGE = 'notara:activePageId'
+const LS_COLLAPSED = 'notara:collapsedIds'
 const lsGetPages = (): Page[] => { try { return JSON.parse(localStorage.getItem(LS_PAGES) || '[]') } catch { return [] } }
 const lsSetPages = (p: Page[]) => { try { localStorage.setItem(LS_PAGES, JSON.stringify(p)) } catch {} }
 
@@ -26,6 +28,7 @@ interface Store {
   searchOpen: boolean
   isLoading: boolean
   saveStatus: 'idle' | 'saving' | 'saved' | 'error'
+  collapsedPageIds: string[]
 
   // Dev mode
   devMode: boolean
@@ -49,6 +52,9 @@ interface Store {
   permanentlyDeletePage: (id: string) => Promise<void>
   savePage: (id: string) => Promise<void>
   reorderPage: (id: string, newParentId: string | null, newOrder: number) => void
+  isPageExpanded: (id: string) => boolean
+  setExpandedPage: (id: string, expanded: boolean) => void
+  toggleExpandedPage: (id: string) => void
   setTheme: (theme: Theme) => void
   accentColor: string
   setAccentColor: (id: string) => void
@@ -97,6 +103,7 @@ export const useStore = create<Store>((set, get) => ({
   searchOpen: false,
   isLoading: false,
   saveStatus: 'idle',
+  collapsedPageIds: (() => { try { return JSON.parse(localStorage.getItem(LS_COLLAPSED) || '[]') } catch { return [] } })(),
   devMode: localStorage.getItem(LS_DEV_MODE) === 'true',
   cursorLine: 1,
   pinEnabled: false,
@@ -184,10 +191,17 @@ export const useStore = create<Store>((set, get) => ({
       if (!isElectron) lsSetPages(pages)
       else await get().savePage(welcome.id)
     }
-    set({ pages, isLoading: false, activePageId: pages[0]?.id ?? null })
+    const savedActiveId = localStorage.getItem(LS_ACTIVE_PAGE)
+    const activePageId = (savedActiveId && pages.find(p => p.id === savedActiveId && !p.deleted))
+      ? savedActiveId
+      : (pages.find(p => !p.deleted)?.id ?? null)
+    set({ pages, isLoading: false, activePageId })
   },
 
-  setActivePage: (id) => set({ activePageId: id }),
+  setActivePage: (id) => {
+    if (id) localStorage.setItem(LS_ACTIVE_PAGE, id)
+    set({ activePageId: id })
+  },
 
   createPage: (parentId = null, kind: PageKind = 'page') => {
     const { pages, vault, cryptoKey } = get()
@@ -301,6 +315,24 @@ export const useStore = create<Store>((set, get) => ({
     )
     set({ pages: newPages })
     get().savePage(id)
+  },
+
+  // Default is expanded; we only store pages that are explicitly collapsed
+  isPageExpanded: (id) => !get().collapsedPageIds.includes(id),
+  setExpandedPage: (id, expanded) => {
+    const ids = get().collapsedPageIds
+    // expanded=true  → remove from collapsed set
+    // expanded=false → add to collapsed set
+    const next = expanded ? ids.filter(x => x !== id) : [...new Set([...ids, id])]
+    localStorage.setItem(LS_COLLAPSED, JSON.stringify(next))
+    set({ collapsedPageIds: next })
+  },
+  toggleExpandedPage: (id) => {
+    const ids = get().collapsedPageIds
+    const isCollapsed = ids.includes(id)
+    const next = isCollapsed ? ids.filter(x => x !== id) : [...ids, id]
+    localStorage.setItem(LS_COLLAPSED, JSON.stringify(next))
+    set({ collapsedPageIds: next })
   },
 
   setTheme: (theme) => { localStorage.setItem(LS_THEME, theme); set({ theme }) },

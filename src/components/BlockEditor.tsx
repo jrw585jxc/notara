@@ -439,16 +439,8 @@ export function BlockEditor({ content, onChange, devMode }: Props) {
     setSlashStart(null)
   }, [])
 
-  // Spellcheck: receive suggestions from main process before the menu opens
-  const spellcheckRef = useRef<SpellcheckData | null>(null)
-  useEffect(() => {
-    if (!isElectron || typeof (window as any).notara?.on !== 'function') return
-    const off = (window as any).notara.on(
-      'spellcheck:context',
-      (_: unknown, data: SpellcheckData) => { spellcheckRef.current = data },
-    )
-    return () => { if (typeof off === 'function') off() }
-  }, [])
+  // No IPC listener needed — spellcheck is done via an explicit invoke call
+  // in handleContextMenu using webContents.isWordMisspelled / getWordSuggestions.
 
   const editor = useEditor({
     extensions: [
@@ -614,15 +606,46 @@ export function BlockEditor({ content, onChange, devMode }: Props) {
     setEmbedDialog(false)
   }, [editor])
 
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+  const handleContextMenu = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault()
     const x = e.clientX, y = e.clientY
-    // Brief pause so the spellcheck:context IPC from main can arrive and
-    // populate spellcheckRef before the menu is rendered.
-    setTimeout(() => {
-      setContextMenu({ x, y, spellcheck: spellcheckRef.current })
-      spellcheckRef.current = null
-    }, 30)
+
+    // Show menu immediately — spell suggestions patch in below if found.
+    setContextMenu({ x, y, spellcheck: null })
+
+    if (!isElectron) return
+
+    // Strategy 1: if there's a single-word selection already, use that.
+    // Strategy 2: use caretRangeFromPoint to find the word at the click pixel.
+    let word = ''
+
+    const domSel = window.getSelection()
+    const selText = domSel?.toString().trim() ?? ''
+    if (selText && /^\w+$/.test(selText)) {
+      word = selText
+    } else {
+      const range = document.caretRangeFromPoint(x, y)
+      if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
+        const textNode = range.startContainer as Text
+        const text = textNode.textContent ?? ''
+        const pos = range.startOffset
+        let lo = pos, hi = pos
+        while (lo > 0 && /\w/.test(text[lo - 1])) lo--
+        while (hi < text.length && /\w/.test(text[hi])) hi++
+        word = text.slice(lo, hi)
+      }
+    }
+
+    if (!word || word.length < 2) return
+
+    try {
+      const result = await (window as any).notara.spellcheck.check(word)
+      if (result?.isMisspelled) {
+        setContextMenu(prev => prev
+          ? { ...prev, spellcheck: { word, suggestions: result.suggestions } }
+          : prev)
+      }
+    } catch { /* non-fatal */ }
   }, [])
 
   if (!editor) return null

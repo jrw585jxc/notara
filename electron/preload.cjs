@@ -62,6 +62,7 @@ contextBridge.exposeInMainWorld('notara', {
   spellcheck: {
     replace: (word) => ipcRenderer.invoke('spellcheck:replace', word),
     addWord: (word) => ipcRenderer.invoke('spellcheck:addWord', word),
+    check: (word) => ipcRenderer.invoke('spellcheck:check', word),
   },
   // Event listeners (main → renderer)
   on: (channel, callback) => {

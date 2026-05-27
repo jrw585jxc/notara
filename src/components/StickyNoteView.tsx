@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Placeholder from '@tiptap/extension-placeholder'
-import { Pin, PinOff, X, Bold, Italic, List, ListOrdered } from 'lucide-react'
+import TaskList from '@tiptap/extension-task-list'
+import TaskItem from '@tiptap/extension-task-item'
+import { Pin, PinOff, X, Bold, Italic, List, ListOrdered, CheckSquare } from 'lucide-react'
 import { markdownToPage, pageToMarkdown } from '../lib/pageUtils'
 import { encryptText, decryptText } from '../lib/crypto'
 import { type Page, type StickyColor } from '../types'
@@ -125,6 +127,8 @@ export function StickyNoteView({ noteId }: StickyNoteViewProps) {
         codeBlock: false,
       }),
       Placeholder.configure({ placeholder: 'Write something…' }),
+      TaskList,
+      TaskItem.configure({ nested: false }),
     ],
     content: '',
     onUpdate({ editor }) {
@@ -281,6 +285,13 @@ export function StickyNoteView({ noteId }: StickyNoteViewProps) {
           title="Numbered list"
         >
           <ListOrdered size={12} />
+        </button>
+        <button
+          className={`sticky-tool-btn${editor?.isActive('taskList') ? ' active' : ''}`}
+          onMouseDown={e => { e.preventDefault(); editor?.chain().focus().toggleTaskList().run() }}
+          title="To-do list"
+        >
+          <CheckSquare size={12} />
         </button>
       </div>
 

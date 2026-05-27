@@ -36,9 +36,11 @@
     "@tiptap/starter-kit": "^3.23.4",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "dictionary-en": "^4.0.0",
     "electron-squirrel-startup": "^1.0.0",
     "gray-matter": "^4.0.3",
     "lucide-react": "^1.16.0",
+    "nspell": "^2.1.5",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-router-dom": "^7.15.1",
@@ -74,7 +76,9 @@
         "asar": true,
         "asarUnpack": [
           "build-resources/**",
-          "**/build-resources/**"
+          "**/build-resources/**",
+          "dictionaries/**",
+          "node_modules/nspell/**"
         ],
         "ignore": [
           "^/src",
@@ -97,6 +101,7 @@
             "name": "Notara",
             "setupIcon": "./build-resources/icon.ico",
             "setupExe": "Notara-Setup.exe",
+            "loadingGif": "./build-resources/installer-splash.gif",
             "authors": "Notara",
             "description": "Private offline note-taking app"
           }
