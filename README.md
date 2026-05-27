@@ -9,7 +9,7 @@
 
   <br />
 
-  [**Download for Windows (.exe)**](https://github.com/jrw585jxc/notara/releases/download/v1.0.0/Notara-Setup.exe) &nbsp;·&nbsp; [**Download for macOS (.dmg)**](https://github.com/jrw585jxc/notara/releases/download/v1.0.0/Notara-mac-1.0.0.zip) &nbsp;·&nbsp; [View all releases](https://github.com/jrw585jxc/notara/releases)
+  [**Download for Windows (.exe)**](https://github.com/jrw585jxc/notara/releases/latest/download/Notara-Setup.exe) &nbsp;·&nbsp; [**Download for macOS (.zip)**](https://github.com/jrw585jxc/notara/releases/latest/download/Notara-darwin-universal.zip) &nbsp;·&nbsp; [View all releases](https://github.com/jrw585jxc/notara/releases)
 
 </div>
 
@@ -229,7 +229,7 @@ The PIN is a convenience shortcut. Internally it derives its own AES-256 key via
 
 ### macOS
 
-1. Download **Notara-mac-1.0.0.zip** from the [latest release](https://github.com/jrw585jxc/notara/releases/latest).
+1. Download **Notara-darwin-universal.zip** from the [latest release](https://github.com/jrw585jxc/notara/releases/latest).
 2. Unzip and drag **Notara.app** into your Applications folder.
 3. On first launch, right-click the app and choose **Open** to bypass the Gatekeeper warning for unsigned apps.
 
