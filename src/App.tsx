@@ -10,6 +10,14 @@ export default function App() {
 
   useEffect(() => { initVault() }, []) // eslint-disable-line
 
+  // Detect Mac and set data-platform on <html> for platform-specific CSS
+  useEffect(() => {
+    if (typeof window === 'undefined' || !(window as any).notara) return
+    ;(window as any).notara.window.platform().then((platform: string) => {
+      document.documentElement.setAttribute('data-platform', platform)
+    })
+  }, [])
+
   // Listen for menu-new-sticky from main process / tray
   useEffect(() => {
     if (typeof window === 'undefined' || !(window as any).notara) return

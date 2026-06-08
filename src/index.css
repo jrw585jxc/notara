@@ -136,6 +136,9 @@ html, body, #root {
 .sidebar-title { font-size: 13px; font-weight: 600; color: var(--text-primary); flex: 1; letter-spacing: -0.01em; }
 .sidebar-actions { display: flex; gap: 2px; -webkit-app-region: no-drag; }
 
+/* Mac: reverse sidebar header so logo/title appear on the right, away from traffic lights */
+[data-platform="darwin"] .sidebar-header { flex-direction: row-reverse; }
+
 .sidebar-body { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 4px 0; }
 .sidebar-body::-webkit-scrollbar { width: 4px; }
 .sidebar-body::-webkit-scrollbar-thumb { background: var(--border-default); border-radius: 2px; }
